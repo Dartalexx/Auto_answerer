@@ -1,4 +1,3 @@
-
 #include "uas.h"
 
 /* Display error and exit application */
@@ -7,24 +6,6 @@ static void error_exit(const char *title, pj_status_t status)
     pjsua_perror(THIS_FILE, title, status);
     pjsua_destroy();
     exit(1);
-}
-
-/*DO NOT USE!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!*/
-static void ringback_start(pjsua_call_id call_id)
-{
-	if (ringback_port_id != PJSUA_INVALID_ID)
-	{
-		pjsua_conf_connect(ringback_port_id, pjsua_call_get_conf_port(call_id));
-		pjsua_conf_adjust_rx_level(pjsua_call_get_conf_port(call_id), 0);
-	}
-}
-
-static void ringback_stop(pjsua_call_id call_id)
-{
-	if (ringback_port_id != PJSUA_INVALID_ID)
-	{
-		pjsua_conf_disconnect(ringback_port_id, pjsua_call_get_conf_port(call_id));
-	}
 }
 
 pj_status_t file_player()
@@ -44,6 +25,8 @@ pj_status_t generate_tone()
 	/* Create ringback tones */
 	pj_str_t name;
 	unsigned i;
+	pjmedia_tone_desc pause_tone[TONES_COUNT];
+	pjmedia_tone_desc ong_tone[TONES_COUNT];
 	pj_status_t status;
 	/* Ringback tone (call is ringing) */
 	status = pjmedia_tonegen_create(pool, 8000, 1, SAMPLES_PER_FRAME, 16, 0, &ringback_port);
@@ -75,34 +58,6 @@ pj_status_t generate_tone()
 	return PJ_SUCCESS;
 }
 
-
-/*Initialization of call manager*/
-void call_manager_init()
-{
-	pj_bzero(&cm.ports, sizeof(cm.ports));
-	cm.calls_number = 0;
-}
-
-/*Connecting new caller to auto-answerer*/
-void call_manager_add_call(pjsua_call_id call_id)
-{
-	if (mode != 2)
-		pjsua_conf_connect(ringback_port_id, pjsua_call_get_conf_port(call_id));
-	else
-		pjsua_conf_connect(pjsua_player_get_conf_port(player_id), pjsua_call_get_conf_port(call_id));
-}
-
-/*Removing caller from auto-answerer*/
-void call_manager_remove_call(pjsua_call_id call_id)
-{
-	if (mode != 2)
-		pjsua_conf_disconnect(ringback_port_id, pjsua_call_get_conf_port(call_id));
-	else
-		pjsua_conf_disconnect(pjsua_player_get_conf_port(player_id), pjsua_call_get_conf_port(call_id));
-}
-
-
-
 /* Callback called by the library upon receiving incoming call */
 static void on_incoming_call(pjsua_acc_id acc_id, pjsua_call_id call_id,
 							 pjsip_rx_data *rdata)
@@ -128,13 +83,7 @@ static void on_incoming_call(pjsua_acc_id acc_id, pjsua_call_id call_id,
 			   ci.local_info.ptr
 			   ));
 
-	/*------------------------PUT HERE NORMAL TIMER-----------------------------*/
-	// double start, check;
-	// start = omp_get_wtime();
-	// //Get current time
-	// for (check = omp_get_wtime();check - start < 7;check = omp_get_wtime()){}
 	pj_thread_sleep(3000);
-	/*-------------------------Timer ends---------------------------------------*/
 	pjsua_call_answer(call_id, 200, NULL, NULL);
 }
 
@@ -149,8 +98,10 @@ static void on_call_state(pjsua_call_id call_id, pjsip_event *e)
   	pjsua_call_get_info(call_id, &call_info);
 
     if (call_info.state == PJSIP_INV_STATE_DISCONNECTED) {
-	cm.calls_number--;
-	call_manager_remove_call(call_id);
+	if (mode != 2)
+		pjsua_conf_disconnect(ringback_port_id, pjsua_call_get_conf_port(call_id));
+	else
+		pjsua_conf_disconnect(pjsua_player_get_conf_port(player_id), pjsua_call_get_conf_port(call_id));
 	PJ_LOG(3,(THIS_FILE, "Call %d is DISCONNECTED [reason=%d (%.*s)]", 
 		  call_id,
 		  call_info.last_status,
@@ -160,7 +111,6 @@ static void on_call_state(pjsua_call_id call_id, pjsip_event *e)
     } else {
 	
 	if(call_info.state == PJSIP_INV_STATE_CONFIRMED) {
-		cm.calls_number++;
 	}
 	if (call_info.state == PJSIP_INV_STATE_EARLY) {
 	    int code;
@@ -197,16 +147,18 @@ static void on_call_media_state(pjsua_call_id call_id)
 {
     pjsua_call_info ci;
 	pj_status_t status;
-    pjsua_call_get_info(call_id, &ci);
-	if (mode != 2)
-	ringback_stop(call_id);
+    pjsua_call_get_info(call_id, &ci); 
+	if ((ringback_port_id != PJSUA_INVALID_ID) && (mode != 2))
+    {
+        pjsua_conf_disconnect(ringback_port_id, pjsua_call_get_conf_port(call_id));
+    }
 	/* When media is active, connect ringtone to caller.*/
     if (ci.media_status == PJSUA_CALL_MEDIA_ACTIVE) {
-		call_manager_add_call(call_id);
-		// if (mode !=2)
-		// pjsua_conf_connect(ringback_port_id, pjsua_call_get_conf_port(call_id));
-		// else
-		// status = pjsua_conf_connect( pjsua_player_get_conf_port(player_id), pjsua_call_get_conf_port(call_id));
+
+		if (mode !=2)
+			pjsua_conf_connect(ringback_port_id, pjsua_call_get_conf_port(call_id));
+		else
+			pjsua_conf_connect(pjsua_player_get_conf_port(player_id), pjsua_call_get_conf_port(call_id));
     }
 }
 
@@ -230,8 +182,6 @@ pj_status_t app_init(pjsua_acc_id *acc_id)
 	pjsua_media_config media_config;
 	pjsua_logging_config log_cfg;
 	pj_status_t status;
-
-	call_manager_init();
 	
 	status = pjsua_create();
 	if (status != PJ_SUCCESS)
