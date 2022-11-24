@@ -96,24 +96,24 @@ pj_status_t generate_tone()
 static void call_media_init(pjsua_call_id call_id)
 {
     pj_status_t status;
-    pj_pool_t * media_pool;
+    pj_pool_t * call_pool;
     call_data *cd;
 
-    media_pool = pjsua_pool_create("mycall", 1000, 1000);
-    cd = PJ_POOL_ZALLOC_T(media_pool, struct call_data);
+    call_pool = pjsua_pool_create("mycall", 1000, 1000);
+    cd = PJ_POOL_ZALLOC_T(call_pool, struct call_data);
 
     pjsua_call_set_user_data(call_id, (void *)cd);
-    status = pjmedia_conf_create(pool, 3, 8000, 1, 160, 16, PJMEDIA_CONF_NO_DEVICE | PJMEDIA_CONF_NO_MIC, &cd->conf);
+    status = pjmedia_conf_create(call_pool, 3, 8000, 1, 160, 16, PJMEDIA_CONF_NO_DEVICE | PJMEDIA_CONF_NO_MIC, &cd->conf);
     if (status != PJ_SUCCESS)
         error_exit("Error during creating conference\n", status);
     cd->dn_slot = pjmedia_conf_get_master_port(cd->conf);
-    status = pjmedia_null_port_create(pool, 8000, 1, 160, 16, &cd->up_slot);
-    status = pjmedia_master_port_create(pool, cd->up_slot, cd->dn_slot, 0, &cd->m);
+    status = pjmedia_null_port_create(call_pool, 8000, 1, 160, 16, &cd->up_slot);
+    status = pjmedia_master_port_create(call_pool, cd->up_slot, cd->dn_slot, 0, &cd->m);
     status = pjmedia_master_port_start(cd->m);
 
     /*---------------------------Not needed---------------------------------------------------*/
-    pjmedia_snd_port ** p_port = pj_pool_alloc(pool, sizeof(pjmedia_snd_port**));
-    pjmedia_snd_port_create 	(pool, -1, -1, 8000, 1, 160, 16, 0, p_port); 	
+    pjmedia_snd_port ** p_port = pj_pool_alloc(call_pool, sizeof(pjmedia_snd_port**));
+    pjmedia_snd_port_create 	(call_pool, -1, -1, 8000, 1, 160, 16, 0, p_port); 	
     status = pjmedia_snd_port_connect(*p_port, cd->dn_slot);
 }
 
@@ -125,9 +125,9 @@ static void on_stream_created(pjsua_call_id call_id, pjmedia_stream *strm,
     cd = (struct call_data*) pjsua_call_get_user_data(call_id);
     pjmedia_conf_add_port(cd->conf, cd->pool, *p_port, NULL, &cd->call_slot);
     if (mode != 2)
-        pjmedia_conf_add_port(cd->conf, pool, ringback_port, NULL, &ringback_port_id);
+        pjmedia_conf_add_port(cd->conf, cd->pool, ringback_port, NULL, &ringback_port_id);
     else
-        pjmedia_conf_add_port(cd->conf, pool, file_port, NULL, &ringback_port_id);
+        pjmedia_conf_add_port(cd->conf, cd->pool, file_port, NULL, &ringback_port_id);
 }
 
 static void on_stream_destroyed(pjsua_call_id call_id, pjmedia_stream *strm, unsigned stream_idx)
