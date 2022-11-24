@@ -19,6 +19,7 @@
 #define OFF_DURATION 4000
 #define TONES_COUNT 1
 #define MAX_CONFERENCE_COUNT 20
+#define NDEBUG
 
 pjsua_conf_port_id ringback_port_id = -1;
 pjmedia_port *ringback_port;
