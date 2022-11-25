@@ -8,6 +8,7 @@ static void error_exit(const char *title, pj_status_t status)
     exit(1);
 }
 
+/*Function creates pjsua player with attached wav file*/
 pj_status_t file_player()
 {
 	pj_status_t status;
@@ -20,6 +21,8 @@ pj_status_t file_player()
 	return PJ_SUCCESS;
 }
 
+/*Function generates 2 different ringtones and plays one of them (depending on choosen mode)
+from ringback_port in loop*/
 pj_status_t generate_tone()
 {
 	/* Create ringback tones */
@@ -45,7 +48,7 @@ pj_status_t generate_tone()
 	ong_tone[0].on_msec = 4000;
 	ong_tone[0].off_msec = 0;
 
-	/*playing tones to port*/
+	/*Playing ringtone to port*/
 	if (mode == 1)
 	pjmedia_tonegen_play(ringback_port, TONES_COUNT, ong_tone, PJMEDIA_TONEGEN_LOOP);
 	else 
@@ -98,6 +101,7 @@ static void on_call_state(pjsua_call_id call_id, pjsip_event *e)
   	pjsua_call_get_info(call_id, &call_info);
 
     if (call_info.state == PJSIP_INV_STATE_DISCONNECTED) {
+	/*Connect ringback or player port to caller*/
 	if (mode != 2)
 		pjsua_conf_disconnect(ringback_port_id, pjsua_call_get_conf_port(call_id));
 	else
@@ -110,16 +114,12 @@ static void on_call_state(pjsua_call_id call_id, pjsip_event *e)
 
     } else {
 	
-	if(call_info.state == PJSIP_INV_STATE_CONFIRMED) {
-	}
 	if (call_info.state == PJSIP_INV_STATE_EARLY) {
 	    int code;
 	    pj_str_t reason;
 	    pjsip_msg *msg;
 
-	    /* This can only occur because of TX or RX message */
-	    pj_assert(e->type == PJSIP_EVENT_TSX_STATE);
-
+		/*Getting call status code*/
 	    if (e->body.tsx_state.type == PJSIP_EVENT_RX_MSG) {
 		msg = e->body.tsx_state.src.rdata->msg_info.msg;
 	    } else {
@@ -147,6 +147,7 @@ static void on_call_media_state(pjsua_call_id call_id)
 {
     pjsua_call_info ci;
 	pj_status_t status;
+	
     pjsua_call_get_info(call_id, &ci); 
 	if ((ringback_port_id != PJSUA_INVALID_ID) && (mode != 2))
     {
@@ -236,13 +237,13 @@ int main(int argc, char *argv[])
 	/*Check the arguments(maybe add check on int here)*/
 	if (argc != 2)
 	{
-		printf("Missing command line argument, will quit now..");
+		printf("Missing command line argument, will quit now..\n");
 		return 1;
 	}
 	mode = atoi(argv[1]);
 	if (mode == 0)
 	{
-		printf("Wrong command line argument, will quit now..");
+		printf("Wrong command line argument, will quit now..\n");
 		return 1;
 	}
 
