@@ -1,11 +1,13 @@
 #include "uas.h"
 
+pj_status_t app_destroy();
+
 /* Display error and exit application */
 static void error_exit(const char *title, pj_status_t status)
 {
-    pjsua_perror(THIS_FILE, title, status);
-    pjsua_destroy();
-    exit(1);
+	pjsua_perror(THIS_FILE, title, status);
+	app_destroy();
+	exit(1);
 }
 
 /*Function creates pjsua player with attached wav file*/
@@ -13,16 +15,16 @@ pj_status_t file_player()
 {
 	pj_status_t status;
 	pj_str_t filename;
-	filename.ptr = "sound/answer.wav"; 
+	filename.ptr = "sound/answer.wav";
 	filename.slen = 16;
 	status = pjsua_player_create(&filename, 0, &player_id);
 	if (status != PJ_SUCCESS)
-	return status;
+		return status;
 	return PJ_SUCCESS;
 }
 
-/*Function generates 2 different ringtones and plays one of them (depending on choosen mode)
-from ringback_port in loop*/
+/*Function generates 2 different ringtones and plays one of them (depending on
+choosen ring_mode) from pause_ringback_port in loop*/
 pj_status_t generate_tone()
 {
 	/* Create ringback tones */
@@ -32,9 +34,14 @@ pj_status_t generate_tone()
 	pjmedia_tone_desc ong_tone[TONES_COUNT];
 	pj_status_t status;
 	/* Ringback tone (call is ringing) */
-	status = pjmedia_tonegen_create(pool, 8000, 1, SAMPLES_PER_FRAME, 16, 0, &ringback_port);
-	if (status != PJ_SUCCESS) return status;
-
+	status = pjmedia_tonegen_create(pool, 8000, 1, SAMPLES_PER_FRAME, 16, 0,
+									&pause_ringback_port);								
+	if (status != PJ_SUCCESS)
+		return status;
+	status = pjmedia_tonegen_create(pool, 8000, 1, SAMPLES_PER_FRAME, 16, 0,
+									&ong_ringback_port);								
+	if (status != PJ_SUCCESS)
+		return status;
 	pj_bzero(&pause_tone, sizeof(pause_tone));
 	pj_bzero(&ong_tone, sizeof(ong_tone));
 
@@ -49,14 +56,15 @@ pj_status_t generate_tone()
 	ong_tone[0].off_msec = 0;
 
 	/*Playing ringtone to port*/
-	if (mode == 1)
-	pjmedia_tonegen_play(ringback_port, TONES_COUNT, ong_tone, PJMEDIA_TONEGEN_LOOP);
-	else 
-	pjmedia_tonegen_play(ringback_port, TONES_COUNT, pause_tone, PJMEDIA_TONEGEN_LOOP);
+	pjmedia_tonegen_play(ong_ringback_port, TONES_COUNT, ong_tone,
+							 PJMEDIA_TONEGEN_LOOP);
+	pjmedia_tonegen_play(pause_ringback_port, TONES_COUNT, pause_tone,
+							 PJMEDIA_TONEGEN_LOOP);
 	/*adding tones port*/
-	status = pjsua_conf_add_port(pool, ringback_port, &ringback_port_id);
+	status = pjsua_conf_add_port(pool, ong_ringback_port, &ong_ringback_port_id);
+	status = pjsua_conf_add_port(pool, pause_ringback_port, &pause_ringback_port_id);
 	if (status != PJ_SUCCESS)
-	error_exit("Error while adding ringtone port to conference", status);
+		error_exit("Error while adding ringtone port to conference", status);
 
 	return PJ_SUCCESS;
 }
@@ -69,7 +77,32 @@ static void on_incoming_call(pjsua_acc_id acc_id, pjsua_call_id call_id,
 	PJ_UNUSED_ARG(acc_id);
 	PJ_UNUSED_ARG(rdata);
 	pjsua_call_get_info(call_id, &ci);
-
+	int ring_mode = 0;
+	pj_str_t uri = ci.remote_info;
+	if (!uri.ptr)
+		error_exit("Error during extracting URI", 0);
+	//Choose ring mode depending on URI;
+	for (int i = 0; i < uri.slen; i++) 
+	{
+		//symbol = uri->ptr[i];
+		if (uri.ptr[i] == '@')
+		{
+			if (isdigit(uri.ptr[i+1]))
+			{
+				ring_mode = 3;
+				break;
+			}
+			if (isalpha(uri.ptr[i+1]))
+			{
+				ring_mode = 2;
+				break;
+			}
+		}
+	}
+	if (ring_mode == 0)	ring_mode = 1;
+	pjsua_call_set_user_data(call_id, &ring_mode);
+	PJ_LOG(3, (THIS_FILE,
+			   "Ring mode %d was chosen for call %d!\n", ring_mode, call_id));
 	/*Sending ringing code to caller*/
 	pjsua_call_answer(call_id, 180, NULL, NULL);
 	PJ_LOG(3, (THIS_FILE,
@@ -77,14 +110,8 @@ static void on_incoming_call(pjsua_acc_id acc_id, pjsua_call_id call_id,
 			   "Media count: %d audio & %d video\n"
 			   "From: %.*s\n"
 			   "To: %.*s\n",
-			   acc_id,
-			   ci.rem_aud_cnt,
-			   ci.rem_vid_cnt,
-			   (int)ci.remote_info.slen,
-			   ci.remote_info.ptr,
-			   (int)ci.local_info.slen,
-			   ci.local_info.ptr
-			   ));
+			   acc_id, ci.rem_aud_cnt, ci.rem_vid_cnt, (int)ci.remote_info.slen,
+			   ci.remote_info.ptr, (int)ci.local_info.slen, ci.local_info.ptr));
 
 	pj_thread_sleep(3000);
 	pjsua_call_answer(call_id, 200, NULL, NULL);
@@ -93,74 +120,91 @@ static void on_incoming_call(pjsua_acc_id acc_id, pjsua_call_id call_id,
 /* Callback called by the library when call's state has changed */
 static void on_call_state(pjsua_call_id call_id, pjsip_event *e)
 {
-   	pjsua_call_info call_info;
+	pjsua_call_info call_info;
 	pjsip_msg *msg;
 	int code;
 	PJ_UNUSED_ARG(e);
-
-  	pjsua_call_get_info(call_id, &call_info);
-
-    if (call_info.state == PJSIP_INV_STATE_DISCONNECTED) {
-	/*Connect ringback or player port to caller*/
-	if (mode != 2)
-		pjsua_conf_disconnect(ringback_port_id, pjsua_call_get_conf_port(call_id));
-	else
-		pjsua_conf_disconnect(pjsua_player_get_conf_port(player_id), pjsua_call_get_conf_port(call_id));
-	PJ_LOG(3,(THIS_FILE, "Call %d is DISCONNECTED [reason=%d (%.*s)]", 
-		  call_id,
-		  call_info.last_status,
-		  (int)call_info.last_status_text.slen,
-		  call_info.last_status_text.ptr));
-
-    } else {
-	
-	if (call_info.state == PJSIP_INV_STATE_EARLY) {
-	    int code;
-	    pj_str_t reason;
-	    pjsip_msg *msg;
-
-		/*Getting call status code*/
-	    if (e->body.tsx_state.type == PJSIP_EVENT_RX_MSG) {
-		msg = e->body.tsx_state.src.rdata->msg_info.msg;
-	    } else {
-		msg = e->body.tsx_state.src.tdata->msg;
-	    }
-
-	    code = msg->line.status.code;
-	    reason = msg->line.status.reason;
-
-	    PJ_LOG(3,(THIS_FILE, "Call %d state changed to %.*s (%d %.*s)", 
-		      call_id, (int)call_info.state_text.slen, 
-                      call_info.state_text.ptr, code, 
-                      (int)reason.slen, reason.ptr));
-	} else {
-		PJ_LOG(3,(THIS_FILE, "Call %d state changed to %.*s", 
-		      call_id,
-		      (int)call_info.state_text.slen,
-		      call_info.state_text.ptr));
+	int ring_mode;
+	pjsua_call_get_info(call_id, &call_info);
+	ring_mode = *(int*)(pjsua_call_get_user_data(call_id));
+	if (call_info.state == PJSIP_INV_STATE_DISCONNECTED)
+	{
+		/*Connect ringback or player port to caller*/
+		if (ring_mode == 1)
+			pjsua_conf_disconnect(ong_ringback_port_id,
+								  pjsua_call_get_conf_port(call_id));
+		if (ring_mode == 2)
+			pjsua_conf_disconnect(pjsua_player_get_conf_port(player_id),
+								  pjsua_call_get_conf_port(call_id));
+		if (ring_mode == 3)
+			pjsua_conf_disconnect(pause_ringback_port_id,
+								  pjsua_call_get_conf_port(call_id));
+		PJ_LOG(3, (THIS_FILE, "Call %d is DISCONNECTED [reason=%d (%.*s)]", call_id,
+				   call_info.last_status, (int)call_info.last_status_text.slen,
+				   call_info.last_status_text.ptr));
 	}
-    }
+	else
+	{
+		if (call_info.state == PJSIP_INV_STATE_EARLY)
+		{
+			int code;
+			pj_str_t reason;
+			pjsip_msg *msg;
+
+			/*Getting call status code*/
+			if (e->body.tsx_state.type == PJSIP_EVENT_RX_MSG)
+			{
+				msg = e->body.tsx_state.src.rdata->msg_info.msg;
+			}
+			else
+			{
+				msg = e->body.tsx_state.src.tdata->msg;
+			}
+
+			code = msg->line.status.code;
+			reason = msg->line.status.reason;
+
+			PJ_LOG(3, (THIS_FILE, "Call %d state changed to %.*s (%d %.*s)", call_id,
+					   (int)call_info.state_text.slen, call_info.state_text.ptr, code,
+					   (int)reason.slen, reason.ptr));
+		}
+		else
+		{
+			PJ_LOG(3, (THIS_FILE, "Call %d state changed to %.*s", call_id,
+					   (int)call_info.state_text.slen, call_info.state_text.ptr));
+		}
+	}
 }
 
 /* Callback called by the library when call's media state has changed */
 static void on_call_media_state(pjsua_call_id call_id)
 {
-    pjsua_call_info ci;
+	pjsua_call_info ci;
 	pj_status_t status;
-	
-    pjsua_call_get_info(call_id, &ci); 
-	if ((ringback_port_id != PJSUA_INVALID_ID) && (mode != 2))
-    {
-        pjsua_conf_disconnect(ringback_port_id, pjsua_call_get_conf_port(call_id));
-    }
+	int ring_mode = *(int*)(pjsua_call_get_user_data(call_id));
+	pjsua_call_get_info(call_id, &ci);
+	if ((pause_ringback_port_id != PJSUA_INVALID_ID))
+	{
+		if (ring_mode == 1)
+		pjsua_conf_disconnect(ong_ringback_port_id, pjsua_call_get_conf_port(call_id));
+		if (ring_mode == 3)
+		pjsua_conf_disconnect(pause_ringback_port_id, pjsua_call_get_conf_port(call_id));
+		
+	}
 	/* When media is active, connect ringtone to caller.*/
-    if (ci.media_status == PJSUA_CALL_MEDIA_ACTIVE) {
-
-		if (mode !=2)
-			pjsua_conf_connect(ringback_port_id, pjsua_call_get_conf_port(call_id));
-		else
-			pjsua_conf_connect(pjsua_player_get_conf_port(player_id), pjsua_call_get_conf_port(call_id));
-    }
+	if (ci.media_status == PJSUA_CALL_MEDIA_ACTIVE)
+	{
+		if (ring_mode == 1)
+			pjsua_conf_connect(ong_ringback_port_id,
+								  pjsua_call_get_conf_port(call_id));
+		if (ring_mode == 2)
+			pjsua_conf_connect(pjsua_player_get_conf_port(player_id),
+								  pjsua_call_get_conf_port(call_id));
+		if (ring_mode == 3)
+			pjsua_conf_connect(pause_ringback_port_id,
+								  pjsua_call_get_conf_port(call_id));
+		
+	}
 }
 
 /*Main app functions*/
@@ -183,7 +227,7 @@ pj_status_t app_init(pjsua_acc_id *acc_id)
 	pjsua_media_config media_config;
 	pjsua_logging_config log_cfg;
 	pj_status_t status;
-	
+
 	status = pjsua_create();
 	if (status != PJ_SUCCESS)
 		error_exit("Error in pjsua_create()", status);
@@ -217,54 +261,49 @@ pj_status_t app_init(pjsua_acc_id *acc_id)
 		error_exit("Error adding local account", status);
 
 	/*Generate ringbacks*/
-	if (mode != 2) status = generate_tone();
-		else status = file_player();
-	if (status != PJ_SUCCESS) error_exit("Error in file_player()", status);
+	status = generate_tone();
+	if (status != PJ_SUCCESS)
+		error_exit("Error in generate_tone()", status);
+	status = file_player();
+	if (status != PJ_SUCCESS)
+		error_exit("Error in file_player()", status);
 }
 
-pj_status_t stop_pjsua(pjsua_acc_id *acc_id)
+pj_status_t app_destroy()
 {
-	pjsua_conf_remove_port(ringback_port_id);
-	pjsua_acc_del(*acc_id);
+	if (pause_ringback_port)
+		pjsua_conf_remove_port(pause_ringback_port_id);
+	if (ong_ringback_port)
+		pjsua_conf_remove_port(ong_ringback_port_id);
+	//pjsua_acc_del(*acc_id);
 	pj_pool_release(pool);
 	pjsua_destroy();
 }
 
 int main(int argc, char *argv[])
 {
-    pjsua_acc_id acc_id;
-	
-	/*Check the arguments(maybe add check on int here)*/
-	if (argc != 2)
-	{
-		printf("Missing command line argument, will quit now..\n");
-		return 1;
-	}
-	mode = atoi(argv[1]);
-	if (mode == 0)
-	{
-		printf("Wrong command line argument, will quit now..\n");
-		return 1;
-	}
+	pjsua_acc_id acc_id;
 
 	/*Initialize pjsua app*/
-   	app_init(&acc_id);
+	app_init(&acc_id);
 
-    /* Wait until user press "q" to quit. */
-    for (;;) {
-	char option[10];
-	puts("Press 'q' to stop server");
-	if (fgets(option, sizeof(option), stdin) == NULL) {
-	    puts("EOF while reading stdin, will quit now..");
-	    break;
+	/* Wait until user press "q" to quit. */
+	for (;;)
+	{
+		char option[10];
+		puts("Press 'q' to stop server");
+		if (fgets(option, sizeof(option), stdin) == NULL)
+		{
+			puts("EOF while reading stdin, will quit now..");
+			break;
+		}
+
+		if (option[0] == 'q')
+			break;
 	}
 
-	if (option[0] == 'q')
-	    break;
-    }
-
 	/*Clear the mess*/
-	stop_pjsua(&acc_id);
+	app_destroy();
 
-    return 0;
+	return 0;
 }

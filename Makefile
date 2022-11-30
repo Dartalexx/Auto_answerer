@@ -3,6 +3,9 @@ PJBASE_ARM=/home/dartalexx/voicemail/pjproject_arm
 ifeq ($(MAKECMDGOALS),server)
 include $(PJBASE)/build.mak
 endif
+ifeq ($(MAKECMDGOALS),)
+include $(PJBASE)/build.mak
+endif
 ifeq ($(MAKECMDGOALS),arm_server)
 include $(PJBASE_ARM)/build.mak
 endif
@@ -26,5 +29,3 @@ test: uas_off.c
 
 clean:
 	rm -f uas*.o arm_server server test client
-
-rebuild: clean all
