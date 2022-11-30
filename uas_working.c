@@ -10,6 +10,33 @@ static void error_exit(const char *title, pj_status_t status)
 	exit(1);
 }
 
+int get_ring_mode(pjsua_call_info call_info)
+{
+	int ring_mode = 0;
+	pj_str_t uri;
+	uri = call_info.remote_info;
+	if (!uri.ptr)
+		error_exit("Can't extract URI", 0);
+	for (int i = 0; i < uri.slen; i++)
+		if (uri.ptr[i] == '@')
+		{
+			if (isdigit(uri.ptr[i + 1]))
+			{
+				ring_mode = 3;
+				break;
+			}
+			if (isalpha(uri.ptr[i + 1]))
+			{
+				ring_mode = 2;
+				break;
+			}
+		}
+	if (ring_mode == 0)
+		ring_mode = 1;
+
+	return ring_mode;
+}
+
 /*Create pjsua player with attached wav file*/
 void file_player()
 {
@@ -73,43 +100,21 @@ void generate_tone()
 	status = pjsua_conf_add_port(pool, pause_ringback_port, &pause_ringback_port_id);
 	if (status != PJ_SUCCESS)
 		error_exit("Can't add ringtone port to conference", status);
-
-	return PJ_SUCCESS;
 }
 
 /* Callback called by the library upon receiving incoming call */
 static void on_incoming_call(pjsua_acc_id acc_id, pjsua_call_id call_id,
 							 pjsip_rx_data *rdata)
 {
-	pjsua_call_info ci;
+	pjsua_call_info call_info;
 	PJ_UNUSED_ARG(acc_id);
 	PJ_UNUSED_ARG(rdata);
 	int ring_mode;
 
-	pjsua_call_get_info(call_id, &ci);
-	ring_mode = 0;
-
-	pj_str_t uri = ci.remote_info;
-	if (!uri.ptr)
-		error_exit("Can't extract URI", 0);
+	pjsua_call_get_info(call_id, &call_info);
 
 	/* Choose ring mode depending on URI*/
-	for (int i = 0; i < uri.slen; i++)
-		if (uri.ptr[i] == '@')
-		{
-			if (isdigit(uri.ptr[i + 1]))
-			{
-				ring_mode = 3;
-				break;
-			}
-			if (isalpha(uri.ptr[i + 1]))
-			{
-				ring_mode = 2;
-				break;
-			}
-		}
-	if (ring_mode == 0)
-		ring_mode = 1;
+	ring_mode = get_ring_mode(call_info);
 
 	/*Assign ring mode to certain call*/
 	pjsua_call_set_user_data(call_id, &ring_mode);
@@ -122,8 +127,8 @@ static void on_incoming_call(pjsua_acc_id acc_id, pjsua_call_id call_id,
 			   "Incoming call for account %d!\n"
 			   "From: %.*s\n"
 			   "To: %.*s\n",
-			   acc_id, (int)ci.remote_info.slen,
-			   ci.remote_info.ptr, (int)ci.local_info.slen, ci.local_info.ptr));
+			   acc_id, (int)call_info.remote_info.slen,
+			   call_info.remote_info.ptr, (int)call_info.local_info.slen, call_info.local_info.ptr));
 	pj_thread_sleep(3000);
 	pjsua_call_answer(call_id, 200, NULL, NULL);
 }
@@ -143,18 +148,19 @@ static void on_call_state(pjsua_call_id call_id, pjsip_event *e)
 
 	if (call_info.state == PJSIP_INV_STATE_DISCONNECTED)
 	{
+		/*If call is disconnected, parse URI again to get ring code*/
+		ring_mode = get_ring_mode(call_info);
+
 		/*Disconnect ringback or player port from caller*/
 		if (ring_mode == 1)
-			status = pjsua_conf_disconnect(ong_ringback_port_id, 
+			pjsua_conf_disconnect(ong_ringback_port_id, 
 										   pjsua_call_get_conf_port(call_id));
 		if (ring_mode == 2)
-			status = pjsua_conf_disconnect(pjsua_player_get_conf_port(player_id), 
+			pjsua_conf_disconnect(pjsua_player_get_conf_port(player_id), 
 										   pjsua_call_get_conf_port(call_id));
 		if (ring_mode == 3)
-			status = pjsua_conf_disconnect(pause_ringback_port_id, 
+			pjsua_conf_disconnect(pause_ringback_port_id, 
 										   pjsua_call_get_conf_port(call_id));
-		if (status != PJ_SUCCESS)
-			error_exit("Can't disconnect ringback port from caller", status);
 
 		PJ_LOG(3, (THIS_FILE, "Call %d is DISCONNECTED [reason=%d (%.*s)]", call_id,
 				   call_info.last_status, (int)call_info.last_status_text.slen,
@@ -190,13 +196,13 @@ static void on_call_state(pjsua_call_id call_id, pjsip_event *e)
 /* Callback called by the library when call's media state has changed */
 static void on_call_media_state(pjsua_call_id call_id)
 {
-	pjsua_call_info ci;
+	pjsua_call_info call_info;
 	pj_status_t status;
 	int ring_mode;
 
 	ring_mode = *(int *)(pjsua_call_get_user_data(call_id));
 
-	status = pjsua_call_get_info(call_id, &ci);
+	status = pjsua_call_get_info(call_id, &call_info);
 	if (status != PJ_SUCCESS)
 		error_exit("Can't get call info", status);
 
@@ -213,7 +219,7 @@ static void on_call_media_state(pjsua_call_id call_id)
 			error_exit("Can't disconnect ringback port from caller", status);
 	}
 	/* When media is active, connect ringtone to caller.*/
-	if (ci.media_status == PJSUA_CALL_MEDIA_ACTIVE)
+	if (call_info.media_status == PJSUA_CALL_MEDIA_ACTIVE)
 	{
 		if (ring_mode == 1)
 			status = pjsua_conf_connect(ong_ringback_port_id,
@@ -282,7 +288,7 @@ pj_status_t app_init()
 	if (status != PJ_SUCCESS)
 		error_exit("Can't start pjsua", status);
 
-	status = pjsua_acc_add_local(t_id, PJ_TRUE, acc_id);
+	status = pjsua_acc_add_local(t_id, PJ_TRUE, &acc_id);
 	if (status != PJ_SUCCESS)
 		error_exit("Can't add local account", status);
 
@@ -297,12 +303,12 @@ void app_destroy()
 	if (pause_ringback_port)
 	{
 		pjsua_conf_remove_port(pause_ringback_port_id);
-		pjmedia_port_destroy(pause_ringback_port_id);
+		pjmedia_port_destroy(pause_ringback_port);
 	}
 	if (ong_ringback_port)
 	{
 		pjsua_conf_remove_port(ong_ringback_port_id);
-		pjmedia_port_destroy(ong_ringback_port_id);
+		pjmedia_port_destroy(ong_ringback_port);
 	}
 
 	pj_pool_release(pool);
