@@ -23,7 +23,6 @@
 
 pjsua_conf_port_id ringback_port_id = -1;
 pjmedia_port *ringback_port;
-pjmedia_conf **conf;
 pjsua_player_id player_id;
 pj_pool_t *pool;
 
