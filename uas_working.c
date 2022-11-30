@@ -10,6 +10,7 @@ static void error_exit(const char *title, pj_status_t status)
 	exit(1);
 }
 
+/*Parse remote URI to choose ringtone mode*/
 int get_ring_mode(pjsua_call_info call_info)
 {
 	int ring_mode = 0;
@@ -63,13 +64,13 @@ void generate_tone()
 	pj_status_t status;
 
 	status = pjmedia_tonegen_create(pool,
-									8000, 1, SAMPLES_PER_FRAME, 16, 0,
+									CLOCK_RATE, CHANNEL_COUNT, SAMPLES_PER_FRAME, BITS_PER_SAMPLE, 0,
 									&pause_ringback_port);
 	if (status != PJ_SUCCESS)
 		error_exit("Can't create tone generator", status);
 
 	status = pjmedia_tonegen_create(pool,
-									8000, 1, SAMPLES_PER_FRAME, 16, 0,
+									CLOCK_RATE, CHANNEL_COUNT, SAMPLES_PER_FRAME, BITS_PER_SAMPLE, 0,
 									&ong_ringback_port);
 	if (status != PJ_SUCCESS)
 		error_exit("Can't create tone generator", status);

@@ -15,6 +15,9 @@
 #define THIS_FILE	"Server"
 
 #define SAMPLES_PER_FRAME 160
+#define CLOCK_RATE 8000
+#define CHANNEL_COUNT 1
+#define BITS_PER_SAMPLE 16
 #define ON_DURATION 1000
 #define OFF_DURATION 4000
 #define TONES_COUNT 1
