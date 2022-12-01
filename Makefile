@@ -1,5 +1,5 @@
-PJBASE=/home/dartalexx/voicemail/pjproject
-PJBASE_ARM=/home/dartalexx/voicemail/pjproject_arm
+PJBASE=$(CURDIR)/pjproject
+PJBASE_ARM=$(CURDIR)/pjproject_arm
 ifeq ($(MAKECMDGOALS),server)
 include $(PJBASE)/build.mak
 endif
