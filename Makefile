@@ -24,8 +24,5 @@ server: uas_working.c
 arm_server: uas_working.c
 	$(ARM_CC) -o $@ $< $(CFLAGS) $(LDFLAGS) -L/usr/local/lib $(LDLIBS)
 
-test: uas_off.c
-	$(CC) -g -o $@ $^ $(CFLAGS) $(LDFLAGS) -lgomp  $(LDLIBS)
-
 clean:
-	rm -f uas*.o arm_server server test client
+	rm -f uas*.o arm_server server
