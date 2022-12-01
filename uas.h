@@ -10,6 +10,7 @@
 #include <pjmedia.h>
 #include <time.h>
 #include <stdio.h>
+#include <sip_timer.h>
 #include <ctype.h>
 
 #define THIS_FILE	"Server"
@@ -24,9 +25,21 @@
 #define MAX_CONFERENCE_COUNT 20
 #define NDEBUG
 
-pjsua_conf_port_id pause_ringback_port_id = -1;
-pjmedia_port *pause_ringback_port;
-pjsua_conf_port_id ong_ringback_port_id = -1;
-pjmedia_port *ong_ringback_port;
+pjsua_conf_port_id ringback_tone_port_id = -1;
+pjmedia_port *ringback_tone_port;
+pjsua_conf_port_id dial_tone_port_id = -1;
+pjmedia_port *dial_tone_port;
 pjsua_player_id player_id;
 pj_pool_t *pool;
+
+typedef enum ring_mode
+{
+    DIAL_TONE = 1, 
+    WAV_AUDIO = 2,
+    RINGBACK_TONE = 3
+} ring_mode;
+
+typedef struct call_data
+{
+    ring_mode ring_mode;
+} call_data;
