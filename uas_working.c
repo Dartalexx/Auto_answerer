@@ -11,13 +11,13 @@ static void error_exit(const char *title, pj_status_t status)
 }
 
 /*Parse remote URI to choose ringtone mode*/
-int get_ring_mode(pjsua_call_info call_info)
+ring_mode get_ring_mode(pjsua_call_info call_info)
 {
-	ring_mode ring_mode = 0;
+	ring_mode ring_mode = NOT_SET;
 	pj_str_t uri;
 	uri = call_info.remote_info;
 	if (!uri.ptr)
-		error_exit("Can't extract URI", 0);
+		return ring_mode;
 	for (int i = 0; i < uri.slen; i++)
 		if (uri.ptr[i] == '@')
 		{
@@ -32,29 +32,27 @@ int get_ring_mode(pjsua_call_info call_info)
 				break;
 			}
 		}
-	if (ring_mode == 0)
+	if (ring_mode == NOT_SET)
 		ring_mode = DIAL_TONE;
 
 	return ring_mode;
 }
 
 /*Create pjsua player with attached wav file*/
-void file_player_create(pj_str_t filename)
+pj_status_t file_player_create(pj_str_t filename)
 {
 	pj_status_t status;
 
 	status = pjsua_player_create(&filename, 0, &player_id);
-	if (status != PJ_SUCCESS)
-		error_exit("Can't create file player", status);
+	return status;
 }
 
 /*Generate 2 different ringtones and play one of them (depending on
 choosen ring_mode) in loop*/
-void tone_generate()
+pj_status_t tone_generate()
 {
 	/* Create ringback tones */
 	pj_str_t name;
-	unsigned i;
 	pjmedia_tone_desc ringback_tone[TONES_COUNT];
 	pjmedia_tone_desc dial_tone[TONES_COUNT];
 	pj_status_t status;
@@ -63,13 +61,13 @@ void tone_generate()
 									CLOCK_RATE, CHANNEL_COUNT, SAMPLES_PER_FRAME, BITS_PER_SAMPLE, 0,
 									&ringback_tone_port);
 	if (status != PJ_SUCCESS)
-		error_exit("Can't create tone generator", status);
+		return status;
 
 	status = pjmedia_tonegen_create(pool,
 									CLOCK_RATE, CHANNEL_COUNT, SAMPLES_PER_FRAME, BITS_PER_SAMPLE, 0,
 									&dial_tone_port);
 	if (status != PJ_SUCCESS)
-		error_exit("Can't create tone generator", status);
+		return status;
 
 	pj_bzero(&ringback_tone, sizeof(ringback_tone));
 	pj_bzero(&dial_tone, sizeof(dial_tone));
@@ -84,17 +82,19 @@ void tone_generate()
 
 	status = pjmedia_tonegen_play(dial_tone_port, TONES_COUNT, dial_tone, PJMEDIA_TONEGEN_LOOP);
 	if (status != PJ_SUCCESS)
-		error_exit("Can't play ongoing ringtone", status);
+		return status;
 	status = pjmedia_tonegen_play(ringback_tone_port, TONES_COUNT, ringback_tone, PJMEDIA_TONEGEN_LOOP);
 	if (status != PJ_SUCCESS)
-		error_exit("Can't play pause ringtone", status);
+		return status;
 
 	status = pjsua_conf_add_port(pool, dial_tone_port, &dial_tone_port_id);
 	if (status != PJ_SUCCESS)
-		error_exit("Can't add add ringtone port to conference", status);
+		return status;
 	status = pjsua_conf_add_port(pool, ringback_tone_port, &ringback_tone_port_id);
 	if (status != PJ_SUCCESS)
-		error_exit("Can't add ringtone port to conference", status);
+		return status;
+		
+	return PJ_SUCCESS;
 }
 
 /* Callback called by the library upon receiving incoming call */
@@ -105,19 +105,24 @@ static void on_incoming_call(pjsua_acc_id acc_id, pjsua_call_id call_id,
 	PJ_UNUSED_ARG(acc_id);
 	PJ_UNUSED_ARG(rdata);
 	ring_mode ring_mode;
-
+	pj_status_t status;
 	pjsua_call_get_info(call_id, &call_info);
-
 	/* Choose ring mode depending on URI*/
 	ring_mode = get_ring_mode(call_info);
+	if (ring_mode == NOT_SET)
+		error_exit("Can't get ring mode from URI", PJ_EUNKNOWN);
 
 	/*Assign ring mode to certain call*/
-	pjsua_call_set_user_data(call_id, &ring_mode);
+	status = pjsua_call_set_user_data(call_id, &ring_mode);
+	if (status != PJ_SUCCESS)
+		error_exit("Can't set user data to call", PJ_EUNKNOWN);
 	PJ_LOG(3, (THIS_FILE,
 			   "Ring mode %d was chosen for call %d!\n", ring_mode, call_id));
 
 	/*Answer the call*/
-	pjsua_call_answer(call_id, 180, NULL, NULL);
+	status = pjsua_call_answer(call_id, 180, NULL, NULL);
+	if (status != PJ_SUCCESS)
+		error_exit("Can't answer call", PJ_EUNKNOWN);
 	PJ_LOG(3, (THIS_FILE,
 			   "Incoming call for account %d!\n"
 			   "From: %.*s\n"
@@ -129,7 +134,9 @@ static void on_incoming_call(pjsua_acc_id acc_id, pjsua_call_id call_id,
 	/* pjsip_sess_expires_hdr* pjsip_sess_expires_hdr_create 	( 	pj_pool_t *  	pool	) 	
 	*/
 
-	pjsua_call_answer(call_id, 200, NULL, NULL);
+	status = pjsua_call_answer(call_id, 200, NULL, NULL);
+	if (status != PJ_SUCCESS)
+		error_exit("Can't answer call", PJ_EUNKNOWN);
 }
 
 /* Callback called by the library when call's state has changed */
@@ -138,12 +145,7 @@ static void on_call_state(pjsua_call_id call_id, pjsip_event *e)
 	pjsua_call_info call_info;
 	pjsip_msg *msg;
 	int code;
-	pj_status_t status;
 	PJ_UNUSED_ARG(e);
-	ring_mode ring_mode;
-
-	ring_mode = *(int *)(pjsua_call_get_user_data(call_id));
-	pjsua_call_get_info(call_id, &call_info);
 
 	if (call_info.state == PJSIP_INV_STATE_DISCONNECTED)
 	{
@@ -186,6 +188,8 @@ static void on_call_media_state(pjsua_call_id call_id)
 	ring_mode ring_mode;
 
 	ring_mode = *(int *)(pjsua_call_get_user_data(call_id));
+	if ((ring_mode != DIAL_TONE) && (ring_mode != RINGBACK_TONE) && (ring_mode != WAV_AUDIO))
+		error_exit("Can't get ring_mode from URI", PJ_EUNKNOWN);
 
 	status = pjsua_call_get_info(call_id, &call_info);
 	if (status != PJ_SUCCESS)
@@ -210,7 +214,7 @@ static void on_call_media_state(pjsua_call_id call_id)
 }
 
 /*Create pjsua UDP transport*/
-void create_udp_transport(pjsua_transport_id *t_id)
+pj_status_t create_udp_transport(pjsua_transport_id *t_id)
 {
 	pjsua_transport_config cfg;
 	pj_status_t status;
@@ -219,8 +223,7 @@ void create_udp_transport(pjsua_transport_id *t_id)
 	cfg.port = 5060;
 
 	status = pjsua_transport_create(PJSIP_TRANSPORT_UDP, &cfg, t_id);
-	if (status != PJ_SUCCESS)
-		error_exit("Can't create transport", status);
+	return status;
 }
 
 /*Initialize  pjsua app*/
@@ -237,11 +240,11 @@ pj_status_t app_init()
 
 	status = pjsua_create();
 	if (status != PJ_SUCCESS)
-		error_exit("Can't create pjsua", status);
+		return status;
 
 	pool = pjsua_pool_create("ringtone", 8000, 1000);
 	if (!pool)
-		error_exit("Can't allocate memory to pool", 0);
+		return status;
 
 	pjsua_config_default(&cfg);
 	cfg.cb.on_incoming_call = &on_incoming_call;
@@ -255,28 +258,32 @@ pj_status_t app_init()
 
 	status = pjsua_init(&cfg, &log_cfg, &media_config);
 	if (status != PJ_SUCCESS)
-		error_exit("Can't initialize pjsua", status);
+		return status;
 
 	create_udp_transport(&t_id);
 
 	status = pjsua_start();
 	if (status != PJ_SUCCESS)
-		error_exit("Can't start pjsua", status);
+		return status;
 
 	status = pjsua_acc_add_local(t_id, PJ_TRUE, &acc_id);
 	if (status != PJ_SUCCESS)
-		error_exit("Can't add local account", status);
-
+		return status;
 
 	pjsip_timer_init_module(pjsua_get_pjsip_endpt());
 	pjsip_timer_setting_default(&time_settings);
 
-	tone_generate();
-	
+	status = tone_generate();
+	if (status != PJ_SUCCESS)
+		error_exit("Can't generate tones for ringtone, will quit now...",status);
+
 	filename.ptr = "sound/answer.wav";
 	filename.slen = 16;
 
-	file_player_create(filename);
+	status = file_player_create(filename);
+	if (status != PJ_SUCCESS)
+		error_exit("Can't create file player, will quit now...",status);
+	return PJ_SUCCESS;
 }
 
 /*Remove ringback ports, release pool and destroy pjsua*/
@@ -299,8 +306,12 @@ void app_destroy()
 
 int main(int argc, char *argv[])
 {
-	app_init();
-
+	pj_status_t status;
+	
+	status = app_init();
+	if (status != PJ_SUCCESS)
+		error_exit("Can't start app, will quit now...", status);
+	
 	/* Wait until "q" is pressed, then quit. */
 	for (;;)
 	{

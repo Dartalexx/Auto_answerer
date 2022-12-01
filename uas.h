@@ -34,9 +34,10 @@ pj_pool_t *pool;
 
 typedef enum ring_mode
 {
-    DIAL_TONE = 1, 
-    WAV_AUDIO = 2,
-    RINGBACK_TONE = 3
+    NOT_SET,
+    DIAL_TONE, 
+    WAV_AUDIO,
+    RINGBACK_TONE
 } ring_mode;
 
 typedef struct call_data
