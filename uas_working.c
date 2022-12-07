@@ -13,6 +13,8 @@ static void error_exit(const char *title, pj_status_t status)
 static void timer_callback(pj_timer_heap_t *timer_heap, pj_timer_entry *entry)
 {
 	pj_status_t status;
+	pjsip_endpoint *endpt = pjsua_get_pjsip_endpt();
+
 	call_data cd = *(call_data*)entry->user_data;
 	int call_id = cd.call_id;
 	PJ_UNUSED_ARG(timer_heap);
@@ -22,7 +24,8 @@ static void timer_callback(pj_timer_heap_t *timer_heap, pj_timer_entry *entry)
 	PJ_LOG(3, (THIS_FILE,
 			   "Timer %d worked successfully\n",
 			   entry->id));
-	pjsip_endpt_cancel_timer(pjsua_get_pjsip_endpt(), entry);
+	pjsip_endpt_cancel_timer(endpt, entry);
+	cd.timer.id = PJSUA_INVALID_ID;
 }
 
 /*Parse remote URI to choose ringtone mode*/
@@ -146,6 +149,7 @@ static void on_incoming_call(pjsua_acc_id acc_id, pjsua_call_id call_id,
 	/*---------------------- Setup pjsip timer here--------------*/
 	pjsip_endpoint *endpt = pjsua_get_pjsip_endpt();
 	pj_time_val delay;
+	// 0x7ffff64af448
 
 	// Initialize timer entry, attaching call_id to it
 	pj_timer_entry_init(&cd.timer, cd.call_id, &cd, &timer_callback);
@@ -153,10 +157,10 @@ static void on_incoming_call(pjsua_acc_id acc_id, pjsua_call_id call_id,
 	// Set expire time for timer
 	delay.sec = 3;
 	delay.msec = 0;
-
+	cd.timer.id = call_id;
+	
 	//Schedule timer
 	status = pjsip_endpt_schedule_timer(endpt, &cd.timer, &delay);
-	cd.timer.id = PJSUA_INVALID_ID;
 	if (status != PJ_SUCCESS)
 		error_exit("Can't schedule the timer", status);
 	/* END */
@@ -191,6 +195,7 @@ static void on_call_state(pjsua_call_id call_id, pjsip_event *e)
         {
 			pjsip_endpoint *endpt = pjsua_get_pjsip_endpt();
 			pjsip_endpt_cancel_timer(endpt, &cd.timer);
+			cd.timer.id = PJSUA_INVALID_ID;
 		}
 	}
 	else
@@ -323,6 +328,7 @@ pj_status_t app_init()
 	if (status != PJ_SUCCESS)
 		error_exit("Can't create file player, will quit now...",status);
 	return PJ_SUCCESS;
+
 }
 
 /*Remove ringback ports, release pool and destroy pjsua*/
