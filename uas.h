@@ -10,7 +10,6 @@
 #include <pjmedia.h>
 #include <time.h>
 #include <stdio.h>
-#include <sip_timer.h>
 #include <ctype.h>
 
 #define THIS_FILE	"Server"
@@ -43,4 +42,6 @@ typedef enum ring_mode
 typedef struct call_data
 {
     ring_mode ring_mode;
+    pj_timer_entry timer;
+    pjsua_call_id call_id;
 } call_data;
