@@ -21,7 +21,7 @@
 #define ON_DURATION 1000
 #define OFF_DURATION 4000
 #define TONES_COUNT 1
-#define MAX_CONFERENCE_COUNT 20
+#define MAX_CALLS 20
 #define NDEBUG
 
 pjsua_conf_port_id ringback_tone_port_id = -1;
@@ -45,3 +45,5 @@ typedef struct call_data
     pj_timer_entry timer;
     pjsua_call_id call_id;
 } call_data;
+
+call_data *calls_data;
