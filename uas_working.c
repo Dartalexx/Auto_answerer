@@ -10,7 +10,7 @@ static void error_exit(const char *title, pj_status_t status)
 	exit(1);
 }
 
-
+/* Go through call_data to find unused call slot and return it*/
 int get_call_data_by_id (pjsua_call_id id)
 {
 	if (!calls_data)
@@ -23,7 +23,6 @@ int get_call_data_by_id (pjsua_call_id id)
 			data_num = i;
 			break;
 		}
-		i++;
 	}
 	return data_num;
 }
@@ -41,7 +40,7 @@ static void timer_callback(pj_timer_heap_t *timer_heap, pj_timer_entry *entry)
 	}
 	// /call_data cd = *(call_data*)entry->user_data;
 
-	status = pjsua_call_answer(call_id, 200, NULL, NULL);
+	status = pjsua_call_answer(call_id, PJSIP_SC_OK, NULL, NULL);
 	if (status != PJ_SUCCESS)
 		error_exit("Can't answer call", PJ_EUNKNOWN);
 	PJ_LOG(3, (THIS_FILE,
@@ -92,7 +91,6 @@ pj_status_t file_player_create(pj_str_t filename)
 pj_status_t tone_generate()
 {
 	/* Create ringback tones */
-	pj_str_t name;
 	pjmedia_tone_desc ringback_tone[TONES_COUNT];
 	pjmedia_tone_desc dial_tone[TONES_COUNT];
 	pj_status_t status;
@@ -112,13 +110,13 @@ pj_status_t tone_generate()
 	pj_bzero(&ringback_tone, sizeof(ringback_tone));
 	pj_bzero(&dial_tone, sizeof(dial_tone));
 
-	ringback_tone[0].freq1 = 425;
+	ringback_tone[0].freq1 = TONE_FREQUENCY;
 	ringback_tone[0].on_msec = ON_DURATION;
 	ringback_tone[0].off_msec = OFF_DURATION;
 
-	dial_tone[0].freq1 = 425;
-	dial_tone[0].on_msec = 4000;
-	dial_tone[0].off_msec = 0;
+	dial_tone[0].freq1 = TONE_FREQUENCY;
+	dial_tone[0].on_msec = DIAL_TONE_ON_DURATION;
+	dial_tone[0].off_msec = DIAL_TONE_OFF_DURATION;
 
 	status = pjmedia_tonegen_play(dial_tone_port, TONES_COUNT, dial_tone, PJMEDIA_TONEGEN_LOOP);
 	if (status != PJ_SUCCESS)
@@ -145,59 +143,63 @@ static void on_incoming_call(pjsua_acc_id acc_id, pjsua_call_id call_id,
 	PJ_UNUSED_ARG(acc_id);
 	PJ_UNUSED_ARG(rdata);
 	pj_status_t status;
+	pj_str_t disconnect_reason;
+	disconnect_reason.ptr = "Rejected";
+	disconnect_reason.slen = 8;
 
 	// Searching in calls_data for empty slots
 	int i = get_call_data_by_id(PJSUA_INVALID_ID);
 	if (i == -1)
 	{
-		PJ_LOG(3, (THIS_FILE,"Can't accept call: no free call_data\n"));
-		pjsua_call_answer(call_id, 608, NULL, NULL);
+		PJ_LOG(3, (THIS_FILE, "Can't accept call: all call slots are busy\n"));
+		//pjsua_call_answer(call_id, PJSIP_SC_BUSY_EVERYWHERE, NULL, NULL);
+		pjsua_call_hangup(call_id, PJSIP_SC_REJECTED, &disconnect_reason, NULL);
 	}
+	else
+	{
+		pjsua_call_get_info(call_id, &call_info);
+		/* Choose ring mode depending on URI*/
+		calls_data[i].ring_mode = get_ring_mode(call_info);
+		calls_data[i].call_id = call_id;
+		if (calls_data[i].ring_mode == NOT_SET)
+			error_exit("Can't get ring mode from URI", PJ_EUNKNOWN);
 
-	pjsua_call_get_info(call_id, &call_info);
-	/* Choose ring mode depending on URI*/
-	calls_data[i].ring_mode = get_ring_mode(call_info);
-	calls_data[i].call_id = call_id;
-	if (calls_data[i].ring_mode == NOT_SET)
-		error_exit("Can't get ring mode from URI", PJ_EUNKNOWN);
+		/*Answer the call*/
+		status = pjsua_call_answer(call_id, PJSIP_SC_RINGING, NULL, NULL);
+		if (status != PJ_SUCCESS)
+			error_exit("Can't answer call", PJ_EUNKNOWN);
+		PJ_LOG(3, (THIS_FILE,
+				   "Incoming call for account %d!\n"
+				   "From: %.*s\n"
+				   "To: %.*s\n",
+				   acc_id, (int)call_info.remote_info.slen,
+				   call_info.remote_info.ptr, (int)call_info.local_info.slen, call_info.local_info.ptr));
 
-	/*Assign ring mode to certain call*/
+		// pj_thread_sleep(3000);
 
-	/*Answer the call*/
-	status = pjsua_call_answer(call_id, 180, NULL, NULL);
-	if (status != PJ_SUCCESS)
-		error_exit("Can't answer call", PJ_EUNKNOWN);
-	PJ_LOG(3, (THIS_FILE,
-			   "Incoming call for account %d!\n"
-			   "From: %.*s\n"
-			   "To: %.*s\n",
-			   acc_id, (int)call_info.remote_info.slen,
-			   call_info.remote_info.ptr, (int)call_info.local_info.slen, call_info.local_info.ptr));
+		/*---------------------- Setup pjsip timer here--------------*/
+		pjsip_endpoint *endpt = pjsua_get_pjsip_endpt();
+		pj_time_val delay;
 
-	//pj_thread_sleep(3000);
+		// Initialize timer entry, attaching call_id to it
+		pj_timer_entry_init(&calls_data[i].timer, calls_data[i].call_id, &calls_data[i], &timer_callback);
 
-	/*---------------------- Setup pjsip timer here--------------*/
-	pjsip_endpoint *endpt = pjsua_get_pjsip_endpt();
-	pj_time_val delay;
+		// Set expire time for timer
+		delay.sec = CALL_DELAY_TIME_SEC;
+		delay.msec = CALL_DELAY_TIME_MSEC;
+		calls_data[i].timer.id = call_id;
 
-	// Initialize timer entry, attaching call_id to it
-	pj_timer_entry_init(&calls_data[i].timer, calls_data[i].call_id, &calls_data[i], &timer_callback);
-
-	// Set expire time for timer
-	delay.sec = 3;
-	delay.msec = 0;
-	calls_data[i].timer.id = call_id;
-	
-	//Schedule timer
-	status = pjsip_endpt_schedule_timer(endpt, &calls_data[i].timer, &delay);
-	if (status != PJ_SUCCESS)
-		error_exit("Can't schedule the timer", status);
-	/* END */
+		// Schedule timer
+		status = pjsip_endpt_schedule_timer(endpt, &calls_data[i].timer, &delay);
+		if (status != PJ_SUCCESS)
+			error_exit("Can't schedule the timer", status);
+		/* END */
 		status = pjsua_call_set_user_data(call_id, &calls_data[i]);
-	if (status != PJ_SUCCESS)
-		error_exit("Can't set user data to call", PJ_EUNKNOWN);
-	PJ_LOG(3, (THIS_FILE,
-			   "Ring mode %d was chosen for call %d!\n", calls_data[i].ring_mode, call_id));
+		if (status != PJ_SUCCESS)
+			error_exit("Can't set user data to call", PJ_EUNKNOWN);
+		PJ_LOG(3, (THIS_FILE,
+				   "Ring mode %d was chosen for call %d!\n", calls_data[i].ring_mode, call_id));
+	}
 }
 
 /* Callback called by the library when call's state has changed */
@@ -207,13 +209,10 @@ static void on_call_state(pjsua_call_id call_id, pjsip_event *e)
 	pjsip_msg *msg;
 	int code;
 	pj_status_t status;
-	//call_data cd;
+	pj_str_t disconnect_reason;
 
-	int i = get_call_data_by_id(call_id);
-	if (i == -1)
-	{
-		error_exit("Can't find user data for this call_id, will quit now", PJ_EUNKNOWN);
-	}
+	disconnect_reason.ptr = "Rejected";
+	disconnect_reason.slen = 8;
 
 	status = pjsua_call_get_info(call_id, &call_info);
 	if (status != PJ_SUCCESS)
@@ -221,47 +220,62 @@ static void on_call_state(pjsua_call_id call_id, pjsip_event *e)
 
 	if (call_info.state == PJSIP_INV_STATE_DISCONNECTED)
 	{
-		//cd = *(call_data*)(pjsua_call_get_user_data(call_id));
-		PJ_LOG(3, (THIS_FILE, "Call %d is DISCONNECTED [reason=%d (%.*s)]", call_id,
-				   call_info.last_status, (int)call_info.last_status_text.slen,
-				   call_info.last_status_text.ptr));
-		/* Release timer after ending call */
-        if (calls_data[i].timer.id != PJSUA_INVALID_ID)
-        {
-			pjsip_endpoint *endpt = pjsua_get_pjsip_endpt();
-			pjsip_endpt_cancel_timer(endpt, &calls_data[i].timer);
-			calls_data[i].timer.id = PJSUA_INVALID_ID;
-		}
-
-		/* Release one call cell*/
-		pj_bzero(&calls_data[i],sizeof(calls_data[i]));
-		calls_data[i].call_id = PJSUA_INVALID_ID;
-	}
-	else
-	{
-		if (call_info.state == PJSIP_INV_STATE_EARLY)
+		int i = get_call_data_by_id(call_id);
+		if (i == -1)
 		{
-			int code;
-			pj_str_t reason;
-			pjsip_msg *msg;
-
-			/*Get call status*/
-			if (e->body.tsx_state.type == PJSIP_EVENT_RX_MSG)
-				msg = e->body.tsx_state.src.rdata->msg_info.msg;
-			else
-				msg = e->body.tsx_state.src.tdata->msg;
-
-			code = msg->line.status.code;
-			reason = msg->line.status.reason;
-
-			PJ_LOG(3, (THIS_FILE, "Call %d state changed to %.*s (%d %.*s)", call_id,
-					   (int)call_info.state_text.slen, call_info.state_text.ptr, code,
-					   (int)reason.slen, reason.ptr));
+			if (pj_strcmp(&call_info.last_status_text, &disconnect_reason) != 0)
+			{
+				PJ_LOG(3, (THIS_FILE, "Current call_id is %d", call_id));
+				error_exit("Can't find user data for this call_id, will quit now", PJ_EUNKNOWN);
+			}
+			else 
+			{
+				PJ_LOG(3, (THIS_FILE, "Call %d is REJECTED [reason=%d (%.*s)]", call_id,
+					   call_info.last_status, (int)call_info.last_status_text.slen,
+					   call_info.last_status_text.ptr));
+			}
 		}
 		else
-			PJ_LOG(3, (THIS_FILE, "Call %d state changed to %.*s", call_id,
-					   (int)call_info.state_text.slen, call_info.state_text.ptr));
+		{ 
+			// cd = *(call_data*)(pjsua_call_get_user_data(call_id));
+			PJ_LOG(3, (THIS_FILE, "Call %d is DISCONNECTED [reason=%d (%.*s)]", call_id,
+					   call_info.last_status, (int)call_info.last_status_text.slen,
+					   call_info.last_status_text.ptr));
+			/* Release timer after ending call */
+			if (calls_data[i].timer.id != PJSUA_INVALID_ID)
+			{
+				pjsip_endpoint *endpt = pjsua_get_pjsip_endpt();
+				pjsip_endpt_cancel_timer(endpt, &calls_data[i].timer);
+				calls_data[i].timer.id = PJSUA_INVALID_ID;
+			}
+
+			/* Release one call cell*/
+			pj_bzero(&calls_data[i], sizeof(calls_data[i]));
+			calls_data[i].call_id = PJSUA_INVALID_ID;
+		}
 	}
+	if (call_info.state == PJSIP_INV_STATE_EARLY)
+	{
+		int code;
+		pj_str_t reason;
+		pjsip_msg *msg;
+
+		/*Get call status*/
+		if (e->body.tsx_state.type == PJSIP_EVENT_RX_MSG)
+			msg = e->body.tsx_state.src.rdata->msg_info.msg;
+		else
+			msg = e->body.tsx_state.src.tdata->msg;
+
+		code = msg->line.status.code;
+		reason = msg->line.status.reason;
+
+		PJ_LOG(3, (THIS_FILE, "Call %d state changed to %.*s (%d %.*s)", call_id,
+				   (int)call_info.state_text.slen, call_info.state_text.ptr, code,
+				   (int)reason.slen, reason.ptr));
+	}
+	else
+		PJ_LOG(3, (THIS_FILE, "Call %d state changed to %.*s", call_id,
+				   (int)call_info.state_text.slen, call_info.state_text.ptr));
 }
 
 /* Callback called by the library when call's media state has changed */
@@ -275,6 +289,7 @@ static void on_call_media_state(pjsua_call_id call_id)
 	int i = get_call_data_by_id(call_id);
 	if (i == -1)
 	{
+		PJ_LOG(3, (THIS_FILE, "Current call_id is %d", call_id));
 		error_exit("Can't find user data for this call_id, will quit now", PJ_EUNKNOWN);
 	}
 	//cd = *(call_data*)(pjsua_call_get_user_data(call_id));
@@ -384,6 +399,7 @@ pj_status_t app_init()
 /*Remove ringback ports, release pool and destroy pjsua*/
 void app_destroy()
 {
+	pjsua_call_hangup_all();
 	if (ringback_tone_port)
 	{
 		pjsua_conf_remove_port(ringback_tone_port_id);
