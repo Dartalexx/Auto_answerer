@@ -16,8 +16,6 @@
 #define DIAL_TONE_SERVER "111"
 #define WAV_SERVER "222"
 #define RINGBACK_TONE_SERVER "333"
-#define SIP_DOMAIN "pjsua.com"
-#define SIP_USER "server"
 #define WAV_RINGTONE "sound/answer.wav"
 #define UDP_PORT 5060
 #define LOG_LEVEL 4
@@ -53,7 +51,7 @@ typedef enum ring_mode
 typedef struct call_data
 {
     ring_mode ring_mode;
-    pj_timer_entry delay_timer;
+    pj_timer_entry answer_delay_timer;
     pj_timer_entry duration_timer;
     pjsua_call_id call_id;
 } call_data;
