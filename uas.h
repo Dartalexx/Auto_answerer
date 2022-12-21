@@ -18,7 +18,7 @@
 #define RINGBACK_TONE_SERVER "333"
 #define WAV_RINGTONE "sound/answer.wav"
 #define UDP_PORT 5060
-#define LOG_LEVEL 4
+#define LOG_LEVEL 3
 #define SAMPLES_PER_FRAME 160
 #define CLOCK_RATE 8000
 #define CHANNEL_COUNT 2
@@ -32,7 +32,9 @@
 #define DIAL_TONE_OFF_DURATION 0
 #define CALL_DELAY_TIME_SEC 3
 #define CALL_DELAY_TIME_MSEC 0
-
+#define CALL_DURATION_TIME_SEC 10
+#define CALL_DURATION_TIME_MSEC 0
+//#define DNDEBUG
 pjsua_conf_port_id ringback_tone_port_id = -1;
 pjmedia_port *ringback_tone_port;
 pjsua_conf_port_id dial_tone_port_id = -1;
@@ -52,7 +54,7 @@ typedef struct call_data
 {
     ring_mode ring_mode;
     pj_timer_entry answer_delay_timer;
-    pj_timer_entry duration_timer;
+    pj_timer_entry call_timeout_timer;
     pjsua_call_id call_id;
 } call_data;
 
