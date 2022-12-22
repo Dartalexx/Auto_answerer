@@ -101,31 +101,62 @@ static void call_timeout_callback(pj_timer_heap_t *timer_heap, pj_timer_entry *e
 	current_call_data->call_timeout_timer.id = PJSUA_INVALID_ID;
 }
 
-/*Parse remote URI to choose ringtone mode*/
-ring_mode get_ring_mode(pjsua_call_info call_info)
+// /*Parse remote URI to choose ringtone mode*/
+// ring_mode get_ring_mode(pjsua_call_info call_info)
+// {
+// 	ring_mode ring_mode = NOT_SET;
+// 	pj_str_t uri;
+// 	uri = call_info.remote_info;
+// 	if (!uri.ptr)
+// 		return ring_mode;
+// 	for (int i = 0; i < uri.slen; i++)
+// 		if (uri.ptr[i] == '@')
+// 		{
+// 			if (isdigit(uri.ptr[i + 1]))
+// 			{
+// 				ring_mode = RINGBACK_TONE;
+// 				break;
+// 			}
+// 			if (isalpha(uri.ptr[i + 1]))
+// 			{
+// 				ring_mode = WAV_AUDIO;
+// 				break;
+// 			}
+// 		}
+// 	if (ring_mode == NOT_SET)
+// 		ring_mode = DIAL_TONE;
+
+// 	return ring_mode;
+// }
+
+/*Parse TO field in request to choose ringtone mode*/
+ring_mode get_ring_mode(pjsip_rx_data *rdata)
 {
 	ring_mode ring_mode = NOT_SET;
-	pj_str_t uri;
-	uri = call_info.remote_info;
-	if (!uri.ptr)
-		return ring_mode;
-	for (int i = 0; i < uri.slen; i++)
-		if (uri.ptr[i] == '@')
+	char *msg;
+	char *start;
+	int size;
+	char *to = pj_pool_alloc(pool, sizeof(char) * 3);
+	msg = rdata->msg_info.msg_buf;
+	pj_str_t dial_server = pj_str(DIAL_TONE_SERVER);
+	pj_str_t ringback_server = pj_str(RINGBACK_TONE_SERVER);
+	pj_str_t wav_server = pj_str(WAV_SERVER);
+	start = strstr(msg, "To:");
+	for (int i = 0; i < 256; i++)
+	{
+		if ((int)*(start + i) == 32)
 		{
-			if (isdigit(uri.ptr[i + 1]))
-			{
-				ring_mode = RINGBACK_TONE;
-				break;
-			}
-			if (isalpha(uri.ptr[i + 1]))
-			{
-				ring_mode = WAV_AUDIO;
-				break;
-			}
-		}
-	if (ring_mode == NOT_SET)
-		ring_mode = DIAL_TONE;
-
+			size = i;
+			strncpy(to, start+size+1, size);
+			break;
+		};
+	};
+	if (pj_strcmp2(&dial_server, to) == 0)
+		return DIAL_TONE;
+	if (pj_strcmp2(&wav_server, to) == 0)
+		return WAV_AUDIO;
+	if (pj_strcmp2(&ringback_server, to) == 0)
+		return RINGBACK_TONE;
 	return ring_mode;
 }
 
@@ -210,14 +241,13 @@ static void on_incoming_call(pjsua_acc_id acc_id, pjsua_call_id call_id,
 		pjsua_call_get_info(call_id, &call_info);
 
 		/* Choose ring mode depending on URI */
-		current_call_data->ring_mode = get_ring_mode(call_info);
+		current_call_data->ring_mode = get_ring_mode(rdata);
 		current_call_data->call_id = call_id;
 		if (current_call_data->ring_mode == NOT_SET)
 		{	
 			PJ_LOG(3, (THIS_FILE,"Can't get ring mode from URI, hanging up call %d", 
 								call_id));
-			disconnect_reason = pj_str("Can't get ring mode from URI");
-			pjsua_call_hangup(call_id, PJSIP_SC_INTERNAL_SERVER_ERROR, &disconnect_reason, NULL);
+			pjsua_call_answer(call_id, PJSIP_SC_NOT_FOUND, NULL, NULL);
 			return;
 		}
 
@@ -237,9 +267,9 @@ static void on_incoming_call(pjsua_acc_id acc_id, pjsua_call_id call_id,
 		pj_timer_entry_init(&current_call_data->answer_delay_timer, 
 							current_call_data->call_id, 
 							current_call_data, &answer_delay_callback);
-		// pj_timer_entry_init(&current_call_data->call_timeout_timer,
-		// 					current_call_data->call_id,
-		// 					current_call_data, &call_timeout_callback);
+		pj_timer_entry_init(&current_call_data->call_timeout_timer,
+							current_call_data->call_id,
+							current_call_data, &call_timeout_callback);
 		delay.sec = CALL_DELAY_TIME_SEC;
 		delay.msec = CALL_DELAY_TIME_MSEC;
 		current_call_data->answer_delay_timer.id = call_id;
@@ -262,7 +292,7 @@ static void on_incoming_call(pjsua_acc_id acc_id, pjsua_call_id call_id,
 			pjsua_call_hangup(call_id, PJSIP_SC_INTERNAL_SERVER_ERROR, &disconnect_reason, NULL);
 			return;
 		}
-		PJ_LOG(4, (THIS_FILE,
+		PJ_LOG(3, (THIS_FILE,
 				   "Ring mode %d was chosen for call %d!\n", current_call_data->ring_mode, call_id));
 	}
 	if (call_id >= MAX_CALLS)
@@ -394,23 +424,23 @@ static void on_call_media_state(pjsua_call_id call_id)
 	/* When media is active, connect ringtone to caller and set call duration timer*/
 	if (call_info.media_status == PJSUA_CALL_MEDIA_ACTIVE)
 	{
-		// /* Set call duration timer*/
-		// pjsip_endpoint *endpt = pjsua_get_pjsip_endpt();
-		// pj_time_val delay;
+		/* Set call duration timer*/
+		pjsip_endpoint *endpt = pjsua_get_pjsip_endpt();
+		pj_time_val delay;
 
-		// delay.sec = CALL_DURATION_TIME_SEC;
-		// delay.msec = CALL_DURATION_TIME_MSEC;
-		// current_call_data->call_timeout_timer.id = call_id;
+		delay.sec = CALL_DURATION_TIME_SEC;
+		delay.msec = CALL_DURATION_TIME_MSEC;
+		current_call_data->call_timeout_timer.id = call_id;
 
-		// status = pjsip_endpt_schedule_timer(endpt, &current_call_data->call_timeout_timer, &delay);
-		// if (status != PJ_SUCCESS)
-		// {	
-		// 	PJ_LOG(3, (THIS_FILE,"Can't schedule the call timeout timer for call %d, hanging up...",
-		// 				call_id));
-		// 	disconnect_reason = pj_str("Can't schedule the call timeout timer");
-		// 	pjsua_call_hangup(call_id, PJSIP_SC_INTERNAL_SERVER_ERROR, &disconnect_reason, NULL);
-		// 	return;
-		// }
+		status = pjsip_endpt_schedule_timer(endpt, &current_call_data->call_timeout_timer, &delay);
+		if (status != PJ_SUCCESS)
+		{	
+			PJ_LOG(3, (THIS_FILE,"Can't schedule the call timeout timer for call %d, hanging up...",
+						call_id));
+			disconnect_reason = pj_str("Can't schedule the call timeout timer");
+			pjsua_call_hangup(call_id, PJSIP_SC_INTERNAL_SERVER_ERROR, &disconnect_reason, NULL);
+			return;
+		}
 		switch(current_call_data->ring_mode)
 		{
 			case DIAL_TONE:

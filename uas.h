@@ -10,6 +10,7 @@
 #include <pjmedia.h>
 #include <time.h>
 #include <stdio.h>
+#include <string.h> 
 #include <ctype.h>
 
 #define THIS_FILE	"Server"
