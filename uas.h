@@ -6,14 +6,14 @@
 #include <pjsip_simple.h>
 #include <pjsua-lib/pjsua.h>
 #include <pjmedia.h>
-#include <pjmedia-codec.h> 
+#include <pjmedia-codec.h>
 #include <pjmedia.h>
 #include <time.h>
 #include <stdio.h>
-#include <string.h> 
+#include <string.h>
 #include <ctype.h>
 
-#define THIS_FILE	"Server"
+#define THIS_FILE "Server"
 #define DIAL_TONE_SERVER "111"
 #define WAV_SERVER "222"
 #define RINGBACK_TONE_SERVER "333"
@@ -35,18 +35,11 @@
 #define CALL_DELAY_TIME_MSEC 0
 #define CALL_DURATION_TIME_SEC 10
 #define CALL_DURATION_TIME_MSEC 0
-//#define DNDEBUG
-pjsua_conf_port_id ringback_tone_port_id = -1;
-pjmedia_port *ringback_tone_port;
-pjsua_conf_port_id dial_tone_port_id = -1;
-pjmedia_port *dial_tone_port;
-pjsua_player_id player_id;
-pj_pool_t *pool;
 
 typedef enum ring_mode
 {
     NOT_SET,
-    DIAL_TONE, 
+    DIAL_TONE,
     WAV_AUDIO,
     RINGBACK_TONE
 } ring_mode;
@@ -58,5 +51,14 @@ typedef struct call_data
     pj_timer_entry call_timeout_timer;
     pjsua_call_id call_id;
 } call_data;
+
+pjsua_conf_port_id ringback_tone_port_id = -1;
+pjmedia_port *ringback_tone_port;
+
+pjsua_conf_port_id dial_tone_port_id = -1;
+pjmedia_port *dial_tone_port;
+
+pjsua_player_id player_id;
+pj_pool_t *pool;
 
 call_data *calls_data;

@@ -10,14 +10,14 @@ static void error_exit(const char *title, pj_status_t status)
 	exit(1);
 }
 
-/* Go through call_data to find unused call slot and return it*/
+/* Go through call_data to find unused call slot and return it */
 call_data *get_call_data_by_id (pjsua_call_id id)
 {
 	if (!calls_data)
 		return NULL;
 	for (int i = 0; i < MAX_CALLS; i++)
 	{
-		if(calls_data[i].call_id == id)
+		if (calls_data[i].call_id == id)
 		{
 			return &calls_data[i];
 		}
@@ -31,6 +31,7 @@ call_data *get_free_call_cell()
 	return get_call_data_by_id(PJSUA_INVALID_ID);
 }
 
+/* Fill call data with zeros */
 void release_call_data_cell(call_data* cell_to_release)
 {
 	pj_bzero(cell_to_release, sizeof(call_data));
@@ -60,7 +61,6 @@ static void answer_delay_callback(pj_timer_heap_t *timer_heap, pj_timer_entry *e
 	PJ_LOG(4, (THIS_FILE,
 			   "Timer %d worked successfully\n",
 			   current_call_data->answer_delay_timer.id));
-	//pjsip_endpt_cancel_timer(endpt, &current_call_data->delay_timer);
 	current_call_data->answer_delay_timer.id = PJSUA_INVALID_ID;
 }
 
@@ -70,66 +70,29 @@ static void call_timeout_callback(pj_timer_heap_t *timer_heap, pj_timer_entry *e
 	pj_status_t status;
 	pjsip_endpoint *endpt = pjsua_get_pjsip_endpt();
 	int call_id = entry->id;
-	pjsua_msg_data msg_data_;
-    pjsip_generic_string_hdr warn;
-    pj_str_t hname = pj_str("Warning");
-    pj_str_t hvalue = pj_str("399 pjsua \"Call duration exceeded\"");
-
+	call_data *current_call_data = get_call_data_by_id(call_id);
+	pj_str_t disconnect_reason;
     PJ_UNUSED_ARG(timer_heap);
+
 	if (call_id == PJSUA_INVALID_ID) 
 	{
 		PJ_LOG(1,(THIS_FILE, "Invalid call ID in timer callback"));
 		return;
     }
-	call_data *current_call_data = get_call_data_by_id(call_id);
-	pj_str_t disconnect_reason;
+	
 	disconnect_reason = pj_str("Call duration has been exceeded");
-
-    pjsua_msg_data_init(&msg_data_);
-    pjsip_generic_string_hdr_init2(&warn, &hname, &hvalue);
-    pj_list_push_back(&msg_data_.hdr_list, &warn);
 
 	status = pjsua_call_hangup(call_id, PJSIP_SC_OK, NULL, NULL);
 	if (status == PJSUA_INVALID_ID)
-	{
 		PJ_LOG(3, (THIS_FILE, "Failed to disconnect the call %d",
 					call_id));
-	}
 	PJ_LOG(3,(THIS_FILE, "Duration (%d seconds) has been exceeded "
 			 "for call %d, disconnecting the call",
 			 CALL_DURATION_TIME_SEC, call_id));
 	current_call_data->call_timeout_timer.id = PJSUA_INVALID_ID;
 }
 
-// /*Parse remote URI to choose ringtone mode*/
-// ring_mode get_ring_mode(pjsua_call_info call_info)
-// {
-// 	ring_mode ring_mode = NOT_SET;
-// 	pj_str_t uri;
-// 	uri = call_info.remote_info;
-// 	if (!uri.ptr)
-// 		return ring_mode;
-// 	for (int i = 0; i < uri.slen; i++)
-// 		if (uri.ptr[i] == '@')
-// 		{
-// 			if (isdigit(uri.ptr[i + 1]))
-// 			{
-// 				ring_mode = RINGBACK_TONE;
-// 				break;
-// 			}
-// 			if (isalpha(uri.ptr[i + 1]))
-// 			{
-// 				ring_mode = WAV_AUDIO;
-// 				break;
-// 			}
-// 		}
-// 	if (ring_mode == NOT_SET)
-// 		ring_mode = DIAL_TONE;
-
-// 	return ring_mode;
-// }
-
-/*Parse TO field in request to choose ringtone mode*/
+/* Parse rx message to choose ringtone mode */
 ring_mode get_ring_mode(pjsip_rx_data *rdata)
 {
 	ring_mode ring_mode = NOT_SET;
@@ -227,20 +190,18 @@ static void on_incoming_call(pjsua_acc_id acc_id, pjsua_call_id call_id,
 	pj_str_t disconnect_reason;
 	pjsua_call_answer(call_id, PJSIP_SC_TRYING, NULL, NULL);
 
-	// Searching in calls_data for empty slots
+	/* Searching in calls_data for empty slots */
 	call_data *current_call_data =  get_free_call_cell();
 	if ((!current_call_data))
 	{
 		PJ_LOG(3, (THIS_FILE, "Can't accept call: all call slots are busy\n"));
 		pjsua_call_answer(call_id, PJSIP_SC_BUSY_EVERYWHERE, NULL, NULL);
-		//disconnect_reason = pj_str("Busy Here");
-		//pjsua_call_hangup(call_id, PJSIP_SC_BUSY_HERE, &disconnect_reason, NULL);
 	}
 	else
 	{
 		pjsua_call_get_info(call_id, &call_info);
 
-		/* Choose ring mode depending on URI */
+		/* Choose ring mode depending on TO field */
 		current_call_data->ring_mode = get_ring_mode(rdata);
 		current_call_data->call_id = call_id;
 		if (current_call_data->ring_mode == NOT_SET)
@@ -327,27 +288,16 @@ static void on_call_state(pjsua_call_id call_id, pjsip_event *e)
 	{
 		current_call_data = get_call_data_by_id(call_id);
 		if (current_call_data == NULL)
-		{	
-			// disconnect_reason = pj_str("Busy Here");
-			// if (pj_strcmp(&call_info.last_status_text, &disconnect_reason) != 0)
-			// {
-			// 	PJ_LOG(3, (THIS_FILE, "Current call_id is %d", call_id));
-			// 	error_exit("Can't find user data for this call_id, will quit now", PJ_EUNKNOWN);
-			// }
-			// else 
-			{
-				PJ_LOG(3, (THIS_FILE, "Call %d is DISCONNECTED [reason=%d (%.*s)]", call_id,
-					   call_info.last_status, (int)call_info.last_status_text.slen,
-					   call_info.last_status_text.ptr));
-			}
-		}
-		else
-		{ 
-			// cd = *(call_data*)(pjsua_call_get_user_data(call_id));
 			PJ_LOG(3, (THIS_FILE, "Call %d is DISCONNECTED [reason=%d (%.*s)]", call_id,
 					   call_info.last_status, (int)call_info.last_status_text.slen,
 					   call_info.last_status_text.ptr));
-			/* Release timer after ending call */
+		else
+		{ 
+			PJ_LOG(3, (THIS_FILE, "Call %d is DISCONNECTED [reason=%d (%.*s)]", call_id,
+					   call_info.last_status, (int)call_info.last_status_text.slen,
+					   call_info.last_status_text.ptr));
+
+			/* Release timers after ending call */
 			if (current_call_data->answer_delay_timer.id != PJSUA_INVALID_ID)
 			{
 				pjsip_endpoint *endpt = pjsua_get_pjsip_endpt();
@@ -360,19 +310,19 @@ static void on_call_state(pjsua_call_id call_id, pjsip_event *e)
 				pjsip_endpt_cancel_timer(endpt, &current_call_data->call_timeout_timer);
 				current_call_data->call_timeout_timer.id = PJSUA_INVALID_ID;
 			}
-			/* Release one call cell*/
+			
+			/* Release one call cell */
 			PJ_LOG(4, (THIS_FILE, "Releasing call data cell for call %d\n", 
 						call_id));
 			release_call_data_cell(current_call_data);
 		}
 	}
-	if (call_info.state == PJSIP_INV_STATE_EARLY)
+	else if (call_info.state == PJSIP_INV_STATE_EARLY)
 	{
 		int code;
 		pj_str_t reason;
 		pjsip_msg *msg;
 
-		/*Get call status*/
 		if (e->body.tsx_state.type == PJSIP_EVENT_RX_MSG)
 			msg = e->body.tsx_state.src.rdata->msg_info.msg;
 		else
@@ -409,22 +359,10 @@ static void on_call_media_state(pjsua_call_id call_id)
 		return;
 	}
 
-	//ring_mode = get_ring_mode(call_info);
-	if ((current_call_data->ring_mode != DIAL_TONE) 
-		&& (current_call_data->ring_mode != RINGBACK_TONE) 
-		&& (current_call_data->ring_mode != WAV_AUDIO))
-	{
-		PJ_LOG(3, (THIS_FILE, "Can't get ring mode from URI, hanging up call %d",
-				  call_id));
-		disconnect_reason = pj_str("Can't get ring mode from URI");
-		pjsua_call_hangup(call_id, PJSIP_SC_INTERNAL_SERVER_ERROR, &disconnect_reason, NULL);
-		return;
-	}
-
 	/* When media is active, connect ringtone to caller and set call duration timer*/
 	if (call_info.media_status == PJSUA_CALL_MEDIA_ACTIVE)
 	{
-		/* Set call duration timer*/
+		/* Set call duration timer */
 		pjsip_endpoint *endpt = pjsua_get_pjsip_endpt();
 		pj_time_val delay;
 
@@ -457,8 +395,15 @@ static void on_call_media_state(pjsua_call_id call_id)
 			status = pjsua_conf_connect(ringback_tone_port_id,	
 										pjsua_call_get_conf_port(call_id));
 			break;
-		}
-		
+
+			default:
+			PJ_LOG(3, (THIS_FILE, "Can't get ring mode from URI, hanging up call %d",
+					   call_id));
+			disconnect_reason = pj_str("Can't get ring mode from URI");
+			pjsua_call_hangup(call_id, PJSIP_SC_INTERNAL_SERVER_ERROR, &disconnect_reason, NULL);
+			return;
+			}
+
 		if (status != PJ_SUCCESS)
 		{
 			PJ_LOG(3, (THIS_FILE, "Can't connect ringtone port to caller (call %d)",
@@ -470,7 +415,7 @@ static void on_call_media_state(pjsua_call_id call_id)
 	}
 }
 
-/*Create pjsua UDP transport*/
+/* Create pjsua UDP transport */
 pj_status_t create_udp_transport(pjsua_transport_id *t_id)
 {
 	pjsua_transport_config cfg;
@@ -483,7 +428,7 @@ pj_status_t create_udp_transport(pjsua_transport_id *t_id)
 	return status;
 }
 
-/*Initialize  pjsua app*/
+/* Initialize  pjsua app */
 pj_status_t app_init()
 {
 	pjsua_config cfg;
@@ -491,7 +436,6 @@ pj_status_t app_init()
 	pjsua_logging_config log_config;
 	pjsua_acc_id local_acc_id;
 	pjsua_acc_id acc_id;
-	
 	pjsua_transport_id t_id;
 	pj_status_t status;
 
@@ -544,7 +488,7 @@ pj_status_t app_init()
 	return PJ_SUCCESS;
 }
 
-/*Remove ringback ports, release pool and destroy pjsua*/
+/* Remove ringback ports, release pool and destroy pjsua */
 void app_destroy()
 {
 	pjsua_call_hangup_all();
