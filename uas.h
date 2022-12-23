@@ -46,16 +46,15 @@ typedef struct call_data
     pjsua_call_id call_id;
 } call_data;
 
-ringtone ringback_tone;
-ringtone dial_tone;
+typedef struct app_data
+{
+    ringtone ringback_tone;
+    ringtone dial_tone;
+    pjsua_player_id player_id;
 
-// pjsua_conf_port_id ringback_tone_port_id = -1;
-// pjmedia_port *ringback_tone_port;
+    call_data *calls_data;
+    
+    pj_pool_t *pool;
+} app_data;
 
-// pjsua_conf_port_id dial_tone_port_id = -1;
-// pjmedia_port *dial_tone_port;
-
-pjsua_player_id player_id;
-pj_pool_t *pool;
-
-call_data *calls_data;
+app_data auto_answerer_data;
