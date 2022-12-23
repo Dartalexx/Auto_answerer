@@ -84,17 +84,17 @@ int main()
 
 	tones[0].freq1 = 200;
 	tones[0].freq2 = 0;
-	tones[0].on_msec = ON_DURATION;
+	tones[0].on_msec = RINGBACK_TONE_ON_DURATION;
 	tones[0].off_msec = OFF_DURATION;
 
 	tones[1].freq1 = 400;
 	tones[1].freq2 = 0;
-	tones[1].on_msec = ON_DURATION;
+	tones[1].on_msec = RINGBACK_TONE_ON_DURATION;
 	tones[1].off_msec = OFF_DURATION;
 
 	tones[2].freq1 = 800;
 	tones[2].freq2 = 0;
-	tones[2].on_msec = ON_DURATION;
+	tones[2].on_msec = RINGBACK_TONE_ON_DURATION;
 	tones[2].off_msec = OFF_DURATION;
 
 	status = pjmedia_tonegen_play(port, 3, tones, 0);
@@ -105,11 +105,11 @@ int main()
 	pjmedia_tone_digit digits[2];
 
 	digits[0].digit = '0';
-	digits[0].on_msec = ON_DURATION;
+	digits[0].on_msec = RINGBACK_TONE_ON_DURATION;
 	digits[0].off_msec = OFF_DURATION;
 
 	digits[1].digit = '0';
-	digits[1].on_msec = ON_DURATION;
+	digits[1].on_msec = RINGBACK_TONE_ON_DURATION;
 	digits[1].off_msec = OFF_DURATION;
 
 	status = pjmedia_tonegen_play_digits(port, 2, digits, 0);

@@ -13,24 +13,18 @@
 #include <string.h>
 #include <ctype.h>
 
+#include "app_ringtones.h"
+
 #define THIS_FILE "Server"
 #define DIAL_TONE_SERVER "111"
 #define WAV_SERVER "222"
 #define RINGBACK_TONE_SERVER "333"
-#define WAV_RINGTONE "sound/answer.wav"
+
 #define UDP_PORT 5060
 #define LOG_LEVEL 3
-#define SAMPLES_PER_FRAME 160
-#define CLOCK_RATE 8000
-#define CHANNEL_COUNT 2
-#define BITS_PER_SAMPLE 16
-#define ON_DURATION 1000
-#define OFF_DURATION 4000
-#define TONES_COUNT 1
+
 #define MAX_CALLS 20
-#define TONE_FREQUENCY 425
-#define DIAL_TONE_ON_DURATION 4000
-#define DIAL_TONE_OFF_DURATION 0
+
 #define CALL_DELAY_TIME_SEC 3
 #define CALL_DELAY_TIME_MSEC 0
 #define CALL_DURATION_TIME_SEC 10
@@ -52,11 +46,14 @@ typedef struct call_data
     pjsua_call_id call_id;
 } call_data;
 
-pjsua_conf_port_id ringback_tone_port_id = -1;
-pjmedia_port *ringback_tone_port;
+ringtone ringback_tone;
+ringtone dial_tone;
 
-pjsua_conf_port_id dial_tone_port_id = -1;
-pjmedia_port *dial_tone_port;
+// pjsua_conf_port_id ringback_tone_port_id = -1;
+// pjmedia_port *ringback_tone_port;
+
+// pjsua_conf_port_id dial_tone_port_id = -1;
+// pjmedia_port *dial_tone_port;
 
 pjsua_player_id player_id;
 pj_pool_t *pool;

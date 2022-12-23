@@ -131,51 +131,81 @@ pj_status_t file_player_create(pj_str_t filename)
 	return status;
 }
 
-/* Generate 2 different ringtones and play them in loop */
-pj_status_t tone_generate()
+/* Generate ringtone and play it in loop */
+pj_status_t tone_generate(ringtone* ringtone)
 {
 	/* Create ringback tones */
-	pjmedia_tone_desc ringback_tone[TONES_COUNT];
-	pjmedia_tone_desc dial_tone[TONES_COUNT];
+	pjmedia_tone_desc tone[ringtone->tones_count];
 	pj_status_t status;
 
 	status = pjmedia_tonegen_create(pool,
-									CLOCK_RATE, CHANNEL_COUNT, SAMPLES_PER_FRAME, BITS_PER_SAMPLE, 0,
-									&ringback_tone_port);
+									ringtone->clock_rate, ringtone->channel_count,
+									ringtone->samples_per_frame, ringtone->bits_per_sample, 0,
+									&ringtone->port);
 	if (status != PJ_SUCCESS)
 		return status;
 
-	status = pjmedia_tonegen_create(pool,
-									CLOCK_RATE, CHANNEL_COUNT, SAMPLES_PER_FRAME, BITS_PER_SAMPLE, 0,
-									&dial_tone_port);
+	pj_bzero(&tone, sizeof(tone));
+	for (int i = 0; i < ringtone->tones_count; i++)
+	{
+		tone[0].freq1 = ringtone->tone_freq;
+		tone[0].on_msec = ringtone->on_duration;
+		tone[0].off_msec = ringtone->off_duration;
+	}
+	status = pjmedia_tonegen_play(ringtone->port, ringtone->tones_count, tone, PJMEDIA_TONEGEN_LOOP);
 	if (status != PJ_SUCCESS)
 		return status;
 
-	pj_bzero(&ringback_tone, sizeof(ringback_tone));
-	pj_bzero(&dial_tone, sizeof(dial_tone));
-
-	ringback_tone[0].freq1 = TONE_FREQUENCY;
-	ringback_tone[0].on_msec = ON_DURATION;
-	ringback_tone[0].off_msec = OFF_DURATION;
-
-	dial_tone[0].freq1 = TONE_FREQUENCY;
-	dial_tone[0].on_msec = DIAL_TONE_ON_DURATION;
-	dial_tone[0].off_msec = DIAL_TONE_OFF_DURATION;
-
-	status = pjmedia_tonegen_play(dial_tone_port, TONES_COUNT, dial_tone, PJMEDIA_TONEGEN_LOOP);
-	if (status != PJ_SUCCESS)
-		return status;
-	status = pjmedia_tonegen_play(ringback_tone_port, TONES_COUNT, ringback_tone, PJMEDIA_TONEGEN_LOOP);
-	if (status != PJ_SUCCESS)
-		return status;
-
-	status = pjsua_conf_add_port(pool, dial_tone_port, &dial_tone_port_id);
-	if (status != PJ_SUCCESS)
-		return status;
-	status = pjsua_conf_add_port(pool, ringback_tone_port, &ringback_tone_port_id);
+	status = pjsua_conf_add_port(pool, ringtone->port, &ringtone->port_id);
 	if (status != PJ_SUCCESS)
 		return status;
 		
+	return PJ_SUCCESS;
+}
+
+/* Generate 2 ringtones and play them in loop */
+pj_status_t tones_generate()
+{
+	pj_status_t status;
+
+		/* Set ringback tone params */
+	{
+		ringback_tone.bits_per_sample = BITS_PER_SAMPLE;
+		ringback_tone.port_id = -1;
+		ringback_tone.clock_rate = CLOCK_RATE;
+		ringback_tone.on_duration = RINGBACK_TONE_ON_DURATION;
+		ringback_tone.off_duration = RINGBACK_TONE_OFF_DURATION;
+		ringback_tone.samples_per_frame = SAMPLES_PER_FRAME;
+		ringback_tone.tone_freq = TONE_FREQUENCY;
+		ringback_tone.tones_count =  TONES_COUNT;
+		ringback_tone.channel_count = CHANNEL_COUNT;
+	}
+
+	/* Set dial tone params */
+	{
+		dial_tone.bits_per_sample = BITS_PER_SAMPLE;
+		dial_tone.port_id = -1;
+		dial_tone.clock_rate = CLOCK_RATE;
+		dial_tone.on_duration = DIAL_TONE_ON_DURATION;
+		dial_tone.off_duration = DIAL_TONE_OFF_DURATION;
+		dial_tone.samples_per_frame = SAMPLES_PER_FRAME;
+		dial_tone.tone_freq = TONE_FREQUENCY;
+		dial_tone.tones_count =  TONES_COUNT;
+		dial_tone.channel_count = CHANNEL_COUNT;
+	}
+
+	status = tone_generate(&ringback_tone);
+	if (status != PJ_SUCCESS)
+		return status;
+
+	status = tone_generate(&dial_tone);
+	if (status != PJ_SUCCESS)
+		return status;
+
+	status = file_player_create(pj_str(WAV_RINGTONE));
+	if (status != PJ_SUCCESS)
+		return status;
+
 	return PJ_SUCCESS;
 }
 
@@ -382,7 +412,7 @@ static void on_call_media_state(pjsua_call_id call_id)
 		switch(current_call_data->ring_mode)
 		{
 			case DIAL_TONE:
-			status = pjsua_conf_connect(dial_tone_port_id,
+			status = pjsua_conf_connect(dial_tone.port_id,
 										pjsua_call_get_conf_port(call_id));
 			break;
 
@@ -392,7 +422,7 @@ static void on_call_media_state(pjsua_call_id call_id)
 			break;
 
 			case RINGBACK_TONE:
-			status = pjsua_conf_connect(ringback_tone_port_id,	
+			status = pjsua_conf_connect(ringback_tone.port_id,	
 										pjsua_call_get_conf_port(call_id));
 			break;
 
@@ -471,13 +501,9 @@ pj_status_t app_init()
 	if (status != PJ_SUCCESS)
 		return status;
 
-	status = tone_generate();
+	status = tones_generate();
 	if (status != PJ_SUCCESS)
-		error_exit("Can't generate tones for ringtone, will quit now...",status);
-
-	status = file_player_create(pj_str(WAV_RINGTONE));
-	if (status != PJ_SUCCESS)
-		error_exit("Can't create file player, will quit now...",status);
+		error_exit("Can't generate ringtones, will quit now...",status);
 
 	calls_data = pj_pool_alloc(pool, sizeof(call_data) * MAX_CALLS);
 	if (!calls_data)
@@ -488,19 +514,19 @@ pj_status_t app_init()
 	return PJ_SUCCESS;
 }
 
-/* Remove ringback ports, release pool and destroy pjsua */
+/* Remove ringtone ports, release pool and destroy pjsua */
 void app_destroy()
 {
 	pjsua_call_hangup_all();
-	if (ringback_tone_port)
+	if (ringback_tone.port)
 	{
-		pjsua_conf_remove_port(ringback_tone_port_id);
-		pjmedia_port_destroy(ringback_tone_port);
+		pjsua_conf_remove_port(ringback_tone.port_id);
+		pjmedia_port_destroy(ringback_tone.port);
 	}
-	if (dial_tone_port)
+	if (dial_tone.port)
 	{
-		pjsua_conf_remove_port(dial_tone_port_id);
-		pjmedia_port_destroy(dial_tone_port);
+		pjsua_conf_remove_port(dial_tone.port_id);
+		pjmedia_port_destroy(dial_tone.port);
 	}
 	pjsua_player_destroy(player_id);
 	pj_pool_release(pool);
