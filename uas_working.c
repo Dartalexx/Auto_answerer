@@ -10,29 +10,29 @@ static void error_exit(const char *title, pj_status_t status)
 	exit(1);
 }
 
-/* Go through call_data to find unused call slot and return it */
-call_data *get_call_data_by_id (pjsua_call_id id)
+/* Search through call_data for unused call slot and return it */
+call_data *call_data_get_by_id (pjsua_call_id id)
 {
-	if (!auto_answerer_data.calls_data)
+	if (!app_data.calls_data)
 		return NULL;
 	for (int i = 0; i < MAX_CALLS; i++)
 	{
-		if (auto_answerer_data.calls_data[i].call_id == id)
+		if (app_data.calls_data[i].call_id == id)
 		{
-			return &auto_answerer_data.calls_data[i];
+			return &app_data.calls_data[i];
 		}
 	}
 	return NULL;
 }
 
-/* Search call_data array to find free element */
-call_data *get_free_call_cell()
+/* Search through call_datas for free element */
+call_data *call_data_get_free()
 {
-	return get_call_data_by_id(PJSUA_INVALID_ID);
+	return call_data_get_by_id(PJSUA_INVALID_ID);
 }
 
 /* Fill call data with zeros */
-void release_call_data_cell(call_data* cell_to_release)
+void call_data_release(call_data* cell_to_release)
 {
 	pj_bzero(cell_to_release, sizeof(call_data));
 	cell_to_release->call_id = PJSUA_INVALID_ID;
@@ -45,7 +45,7 @@ static void answer_delay_callback(pj_timer_heap_t *timer_heap, pj_timer_entry *e
 	pjsip_endpoint *endpt = pjsua_get_pjsip_endpt();
 	int call_id = entry->id;
 	PJ_UNUSED_ARG(timer_heap);
-	call_data *current_call_data = get_call_data_by_id(call_id);
+	call_data *current_call_data = call_data_get_by_id(call_id);
 	pj_str_t disconnect_reason;
 	status = pjsua_call_answer(call_id, PJSIP_SC_OK, NULL, NULL);
 	if (status != PJ_SUCCESS)
@@ -70,7 +70,7 @@ static void call_timeout_callback(pj_timer_heap_t *timer_heap, pj_timer_entry *e
 	pj_status_t status;
 	pjsip_endpoint *endpt = pjsua_get_pjsip_endpt();
 	int call_id = entry->id;
-	call_data *current_call_data = get_call_data_by_id(call_id);
+	call_data *current_call_data = call_data_get_by_id(call_id);
 	pj_str_t disconnect_reason;
     PJ_UNUSED_ARG(timer_heap);
 
@@ -93,17 +93,19 @@ static void call_timeout_callback(pj_timer_heap_t *timer_heap, pj_timer_entry *e
 }
 
 /* Parse rx message to choose ringtone mode */
-ring_mode get_ring_mode(pjsip_rx_data *rdata)
+ring_mode ring_mode_get(pjsip_rx_data *rdata)
 {
-	ring_mode ring_mode = NOT_SET;
 	char *msg;
 	char *start;
 	int size;
-	char *to = pj_pool_alloc(auto_answerer_data.pool, sizeof(char) * 3);
-	msg = rdata->msg_info.msg_buf;
+	
 	pj_str_t dial_server = pj_str(DIAL_TONE_SERVER);
 	pj_str_t ringback_server = pj_str(RINGBACK_TONE_SERVER);
 	pj_str_t wav_server = pj_str(WAV_SERVER);
+
+	char *to = pj_pool_alloc(app_data.pool, sizeof(char) * 3);
+	msg = rdata->msg_info.msg_buf;
+	
 	start = strstr(msg, "To:");
 	for (int i = 0; i < 256; i++)
 	{
@@ -112,22 +114,24 @@ ring_mode get_ring_mode(pjsip_rx_data *rdata)
 			size = i;
 			strncpy(to, start+size+1, size);
 			break;
-		};
-	};
+		}
+	}
+
 	if (pj_strcmp2(&dial_server, to) == 0)
-		return DIAL_TONE;
+		return DIAL_MODE;
 	if (pj_strcmp2(&wav_server, to) == 0)
-		return WAV_AUDIO;
+		return WAV_MODE;
 	if (pj_strcmp2(&ringback_server, to) == 0)
-		return RINGBACK_TONE;
-	return ring_mode;
+		return RINGBACK_MODE;
+
+	return NOT_SET;
 }
 
 /* Create pjsua player with attached wav file */
 pj_status_t file_player_create(pj_str_t filename)
 {
 	pj_status_t status;
-	status = pjsua_player_create(&filename, 0, &auto_answerer_data.player_id);
+	status = pjsua_player_create(&filename, 0, &app_data.player_id);
 	return status;
 }
 
@@ -138,7 +142,7 @@ pj_status_t tone_generate(ringtone* ringtone)
 	pjmedia_tone_desc tone[ringtone->tones_count];
 	pj_status_t status;
 
-	status = pjmedia_tonegen_create(auto_answerer_data.pool,
+	status = pjmedia_tonegen_create(app_data.pool,
 									ringtone->clock_rate, ringtone->channel_count,
 									ringtone->samples_per_frame, ringtone->bits_per_sample, 0,
 									&ringtone->port);
@@ -156,7 +160,7 @@ pj_status_t tone_generate(ringtone* ringtone)
 	if (status != PJ_SUCCESS)
 		return status;
 
-	status = pjsua_conf_add_port(auto_answerer_data.pool, ringtone->port, &ringtone->port_id);
+	status = pjsua_conf_add_port(app_data.pool, ringtone->port, &ringtone->port_id);
 	if (status != PJ_SUCCESS)
 		return status;
 		
@@ -170,35 +174,35 @@ pj_status_t ringtones_generate()
 
 	/* Set ringback tone params */
 	{
-		auto_answerer_data.ringback_tone.bits_per_sample = BITS_PER_SAMPLE;
-		auto_answerer_data.ringback_tone.port_id = -1;
-		auto_answerer_data.ringback_tone.clock_rate = CLOCK_RATE;
-		auto_answerer_data.ringback_tone.on_duration = RINGBACK_TONE_ON_DURATION;
-		auto_answerer_data.ringback_tone.off_duration = RINGBACK_TONE_OFF_DURATION;
-		auto_answerer_data.ringback_tone.samples_per_frame = SAMPLES_PER_FRAME;
-		auto_answerer_data.ringback_tone.tone_freq = TONE_FREQUENCY;
-		auto_answerer_data.ringback_tone.tones_count =  TONES_COUNT;
-		auto_answerer_data.ringback_tone.channel_count = CHANNEL_COUNT;
+		app_data.ringback_tone.bits_per_sample = BITS_PER_SAMPLE;
+		app_data.ringback_tone.port_id = -1;
+		app_data.ringback_tone.clock_rate = CLOCK_RATE;
+		app_data.ringback_tone.on_duration = RINGBACK_TONE_ON_DURATION;
+		app_data.ringback_tone.off_duration = RINGBACK_TONE_OFF_DURATION;
+		app_data.ringback_tone.samples_per_frame = SAMPLES_PER_FRAME;
+		app_data.ringback_tone.tone_freq = TONE_FREQUENCY;
+		app_data.ringback_tone.tones_count =  TONES_COUNT;
+		app_data.ringback_tone.channel_count = CHANNEL_COUNT;
 	}
 
 	/* Set dial tone params */
 	{
-		auto_answerer_data.dial_tone.bits_per_sample = BITS_PER_SAMPLE;
-		auto_answerer_data.dial_tone.port_id = -1;
-		auto_answerer_data.dial_tone.clock_rate = CLOCK_RATE;
-		auto_answerer_data.dial_tone.on_duration = DIAL_TONE_ON_DURATION;
-		auto_answerer_data.dial_tone.off_duration = DIAL_TONE_OFF_DURATION;
-		auto_answerer_data.dial_tone.samples_per_frame = SAMPLES_PER_FRAME;
-		auto_answerer_data.dial_tone.tone_freq = TONE_FREQUENCY;
-		auto_answerer_data.dial_tone.tones_count =  TONES_COUNT;
-		auto_answerer_data.dial_tone.channel_count = CHANNEL_COUNT;
+		app_data.dial_tone.bits_per_sample = BITS_PER_SAMPLE;
+		app_data.dial_tone.port_id = -1;
+		app_data.dial_tone.clock_rate = CLOCK_RATE;
+		app_data.dial_tone.on_duration = DIAL_TONE_ON_DURATION;
+		app_data.dial_tone.off_duration = DIAL_TONE_OFF_DURATION;
+		app_data.dial_tone.samples_per_frame = SAMPLES_PER_FRAME;
+		app_data.dial_tone.tone_freq = TONE_FREQUENCY;
+		app_data.dial_tone.tones_count =  TONES_COUNT;
+		app_data.dial_tone.channel_count = CHANNEL_COUNT;
 	}
 
-	status = tone_generate(&auto_answerer_data.ringback_tone);
+	status = tone_generate(&app_data.ringback_tone);
 	if (status != PJ_SUCCESS)
 		return status;
 
-	status = tone_generate(&auto_answerer_data.dial_tone);
+	status = tone_generate(&app_data.dial_tone);
 	if (status != PJ_SUCCESS)
 		return status;
 
@@ -221,7 +225,7 @@ static void on_incoming_call(pjsua_acc_id acc_id, pjsua_call_id call_id,
 	pjsua_call_answer(call_id, PJSIP_SC_TRYING, NULL, NULL);
 
 	/* Searching in calls_data for empty slots */
-	call_data *current_call_data =  get_free_call_cell();
+	call_data *current_call_data =  call_data_get_free();
 	if ((!current_call_data))
 	{
 		PJ_LOG(3, (THIS_FILE, "Can't accept call: all call slots are busy\n"));
@@ -232,7 +236,7 @@ static void on_incoming_call(pjsua_acc_id acc_id, pjsua_call_id call_id,
 		pjsua_call_get_info(call_id, &call_info);
 
 		/* Choose ring mode depending on TO field */
-		current_call_data->ring_mode = get_ring_mode(rdata);
+		current_call_data->ring_mode = ring_mode_get(rdata);
 		current_call_data->call_id = call_id;
 		if (current_call_data->ring_mode == NOT_SET)
 		{	
@@ -274,6 +278,7 @@ static void on_incoming_call(pjsua_acc_id acc_id, pjsua_call_id call_id,
 			pjsua_call_hangup(call_id, PJSIP_SC_INTERNAL_SERVER_ERROR, &disconnect_reason, NULL);
 			return;
 		}
+
 		status = pjsua_call_set_user_data(call_id, current_call_data);
 		if (status != PJ_SUCCESS)
 		{
@@ -316,7 +321,7 @@ static void on_call_state(pjsua_call_id call_id, pjsip_event *e)
 
 	if (call_info.state == PJSIP_INV_STATE_DISCONNECTED)
 	{
-		current_call_data = get_call_data_by_id(call_id);
+		current_call_data = call_data_get_by_id(call_id);
 		if (current_call_data == NULL)
 			PJ_LOG(3, (THIS_FILE, "Call %d is DISCONNECTED [reason=%d (%.*s)]", call_id,
 					   call_info.last_status, (int)call_info.last_status_text.slen,
@@ -344,7 +349,7 @@ static void on_call_state(pjsua_call_id call_id, pjsip_event *e)
 			/* Release one call cell */
 			PJ_LOG(4, (THIS_FILE, "Releasing call data cell for call %d\n", 
 						call_id));
-			release_call_data_cell(current_call_data);
+			call_data_release(current_call_data);
 		}
 	}
 	else if (call_info.state == PJSIP_INV_STATE_EARLY)
@@ -377,7 +382,7 @@ static void on_call_media_state(pjsua_call_id call_id)
 	pj_status_t status;
 	pj_str_t disconnect_reason;
 	call_data *current_call_data;
-	current_call_data = get_call_data_by_id(call_id);
+	current_call_data = call_data_get_by_id(call_id);
 
 	status = pjsua_call_get_info(call_id, &call_info);
 	if (status != PJ_SUCCESS)
@@ -411,18 +416,18 @@ static void on_call_media_state(pjsua_call_id call_id)
 		}
 		switch(current_call_data->ring_mode)
 		{
-			case DIAL_TONE:
-			status = pjsua_conf_connect(auto_answerer_data.dial_tone.port_id,
+			case DIAL_MODE:
+			status = pjsua_conf_connect(app_data.dial_tone.port_id,
 										pjsua_call_get_conf_port(call_id));
 			break;
 
-			case WAV_AUDIO:
-			status = pjsua_conf_connect(pjsua_player_get_conf_port(auto_answerer_data.player_id),
+			case WAV_MODE:
+			status = pjsua_conf_connect(pjsua_player_get_conf_port(app_data.player_id),
 										pjsua_call_get_conf_port(call_id));
 			break;
 
-			case RINGBACK_TONE:
-			status = pjsua_conf_connect(auto_answerer_data.ringback_tone.port_id,	
+			case RINGBACK_MODE:
+			status = pjsua_conf_connect(app_data.ringback_tone.port_id,	
 										pjsua_call_get_conf_port(call_id));
 			break;
 
@@ -446,7 +451,7 @@ static void on_call_media_state(pjsua_call_id call_id)
 }
 
 /* Create pjsua UDP transport */
-pj_status_t create_udp_transport(pjsua_transport_id *t_id)
+pj_status_t udp_transport_create(pjsua_transport_id *t_id)
 {
 	pjsua_transport_config cfg;
 	pj_status_t status;
@@ -473,8 +478,8 @@ pj_status_t app_init()
 	if (status != PJ_SUCCESS)
 		return status;
 
-	auto_answerer_data.pool = pjsua_pool_create("main_pool", 8000, 1500);
-	if (!auto_answerer_data.pool)
+	app_data.pool = pjsua_pool_create("main_pool", 8000, 1500);
+	if (!app_data.pool)
 		return status;
 
 	pjsua_config_default(&cfg);
@@ -491,7 +496,7 @@ pj_status_t app_init()
 	if (status != PJ_SUCCESS)
 		return status;
 
-	create_udp_transport(&t_id);
+	udp_transport_create(&t_id);
 	
 	status = pjsua_start();
 	if (status != PJ_SUCCESS)
@@ -505,11 +510,11 @@ pj_status_t app_init()
 	if (status != PJ_SUCCESS)
 		error_exit("Can't generate ringtones, will quit now...",status);
 
-	auto_answerer_data.calls_data = pj_pool_alloc(auto_answerer_data.pool, sizeof(call_data) * MAX_CALLS);
-	if (!auto_answerer_data.calls_data)
+	app_data.calls_data = pj_pool_alloc(app_data.pool, sizeof(call_data) * MAX_CALLS);
+	if (!app_data.calls_data)
 		error_exit("Can't allocate memory for calls data array, will quit now", PJ_EUNKNOWN);
 	for (int i = 0; i < MAX_CALLS; i++)
-		auto_answerer_data.calls_data[i].call_id = PJSUA_INVALID_ID;
+		app_data.calls_data[i].call_id = PJSUA_INVALID_ID;
 
 	return PJ_SUCCESS;
 }
@@ -518,18 +523,18 @@ pj_status_t app_init()
 void app_destroy()
 {
 	pjsua_call_hangup_all();
-	if (auto_answerer_data.ringback_tone.port)
+	if (app_data.ringback_tone.port)
 	{
-		pjsua_conf_remove_port(auto_answerer_data.ringback_tone.port_id);
-		pjmedia_port_destroy(auto_answerer_data.ringback_tone.port);
+		pjsua_conf_remove_port(app_data.ringback_tone.port_id);
+		pjmedia_port_destroy(app_data.ringback_tone.port);
 	}
-	if (auto_answerer_data.dial_tone.port)
+	if (app_data.dial_tone.port)
 	{
-		pjsua_conf_remove_port(auto_answerer_data.dial_tone.port_id);
-		pjmedia_port_destroy(auto_answerer_data.dial_tone.port);
+		pjsua_conf_remove_port(app_data.dial_tone.port_id);
+		pjmedia_port_destroy(app_data.dial_tone.port);
 	}
-	pjsua_player_destroy(auto_answerer_data.player_id);
-	pj_pool_release(auto_answerer_data.pool);
+	pjsua_player_destroy(app_data.player_id);
+	pj_pool_release(app_data.pool);
 	pjsua_destroy();
 }
 

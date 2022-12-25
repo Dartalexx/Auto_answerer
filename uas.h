@@ -16,6 +16,7 @@
 #include "app_ringtones.h"
 
 #define THIS_FILE "Server"
+
 #define DIAL_TONE_SERVER "111"
 #define WAV_SERVER "222"
 #define RINGBACK_TONE_SERVER "333"
@@ -30,23 +31,28 @@
 #define CALL_DURATION_TIME_SEC 10
 #define CALL_DURATION_TIME_MSEC 0
 
+/* Contains info of choosen ringtone for current call */
 typedef enum ring_mode
 {
     NOT_SET,
-    DIAL_TONE,
-    WAV_AUDIO,
-    RINGBACK_TONE
+    DIAL_MODE,
+    WAV_MODE,
+    RINGBACK_MODE
 } ring_mode;
 
+/* Structure that contains timers and ring mode for specific call */
 typedef struct call_data
 {
     ring_mode ring_mode;
+
     pj_timer_entry answer_delay_timer;
     pj_timer_entry call_timeout_timer;
+    
     pjsua_call_id call_id;
 } call_data;
 
-typedef struct app_data
+/* Structure that contains ringtones, call_data array, and pool */
+typedef struct app_config
 {
     ringtone ringback_tone;
     ringtone dial_tone;
@@ -55,6 +61,6 @@ typedef struct app_data
     call_data *calls_data;
     
     pj_pool_t *pool;
-} app_data;
+} app_config;
 
-app_data auto_answerer_data;
+app_config app_data;
