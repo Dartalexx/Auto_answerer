@@ -103,7 +103,9 @@ ring_mode ring_mode_get(pjsip_rx_data *rdata)
 	pj_str_t ringback_server = pj_str(RINGBACK_TONE_SERVER);
 	pj_str_t wav_server = pj_str(WAV_SERVER);
 
-	char *to = pj_pool_alloc(app_data.pool, sizeof(char) * 3);
+	//ERROR HERE???
+	char *to = (char*)pj_pool_alloc(app_data.pool, sizeof(char) * 3);
+	pj_bzero(to, sizeof(to));
 	msg = rdata->msg_info.msg_buf;
 	
 	start = strstr(msg, "To:");
