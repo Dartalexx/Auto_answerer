@@ -98,24 +98,33 @@ ring_mode ring_mode_get(pjsip_rx_data *rdata)
 	char *msg;
 	char *start;
 	int size;
+	char *start_buf, *end_buf;
 	
 	pj_str_t dial_server = pj_str(DIAL_TONE_SERVER);
 	pj_str_t ringback_server = pj_str(RINGBACK_TONE_SERVER);
 	pj_str_t wav_server = pj_str(WAV_SERVER);
 
-	//ERROR HERE???
 	char *to = (char*)pj_pool_alloc(app_data.pool, sizeof(char) * 3);
 	pj_bzero(to, sizeof(to));
 	msg = rdata->msg_info.msg_buf;
 	
+	start_buf = end_buf = NULL;
 	start = strstr(msg, "To:");
-	for (int i = 0; i < 256; i++)
+	for (int i = 0; (((int)*(start + i) != 0) && (i < PJSIP_MAX_PKT_LEN)); i++)
 	{
 		if ((int)*(start + i) == 32)
 		{
-			size = i;
-			strncpy(to, start+size+1, size);
-			break;
+			if (start_buf)
+			{
+				end_buf = start + i;
+				size = (int)(end_buf - start_buf);
+				strncpy(to, start_buf, size);
+				break;
+			}
+			else 
+			{
+				start_buf = start + i + 1;
+			}
 		}
 	}
 
