@@ -18,11 +18,11 @@ LDLIBS = $(PJ_LDLIBS)
 ARM_CC  = /opt/gcc-linaro-5.5.0-2017.10-x86_64_aarch64-linux-gnu/bin/aarch64-linux-gnu-gcc
 all: server
 
-server: uas_working.c
+server: uas.c
 	$(CC) -g -o $@ $< $(CFLAGS) $(LDFLAGS) $(LDLIBS)
 
-arm_server: uas_working.c
+arm_server: uas.c
 	$(ARM_CC) -o $@ $< $(CFLAGS) $(LDFLAGS) -L/usr/local/lib $(LDLIBS)
 
 clean:
-	rm -f uas*.o arm_server server
+	rm -f arm_server server

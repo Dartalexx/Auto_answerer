@@ -168,7 +168,7 @@ pj_status_t tone_generate(ringtone* ringtone)
 }
 
 /* Generate 2 ringtones and play them in loop */
-pj_status_t ringtones_generate()
+pj_status_t ringtones_create()
 {
 	pj_status_t status;
 
@@ -506,7 +506,7 @@ pj_status_t app_init()
 	if (status != PJ_SUCCESS)
 		return status;
 
-	status = ringtones_generate();
+	status = ringtones_create();
 	if (status != PJ_SUCCESS)
 		error_exit("Can't generate ringtones, will quit now...",status);
 
