@@ -34,4 +34,4 @@ arm_server: uas.c
 	$(ARM_CC) -o $@ $< $(CFLAGS) $(LDFLAGS) -L/usr/local/lib $(LDLIBS)
 
 clean:
-	rm -f arm_server server
+	rm -f arm_server noopt server
