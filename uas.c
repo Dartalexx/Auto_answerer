@@ -251,7 +251,7 @@ static void on_incoming_call(pjsua_acc_id acc_id, pjsua_call_id call_id,
 		current_call_data->call_id = call_id;
 		if (current_call_data->ring_mode == NOT_SET)
 		{	
-			PJ_LOG(3, (THIS_FILE,"Can't get ring mode from URI, hanging up call %d", 
+			PJ_LOG(3, (THIS_FILE,"Can't get correct ring mode from URI, hanging up call %d", 
 								call_id));
 			pjsua_call_answer(call_id, PJSIP_SC_NOT_FOUND, NULL, NULL);
 			return;
@@ -273,9 +273,6 @@ static void on_incoming_call(pjsua_acc_id acc_id, pjsua_call_id call_id,
 		pj_timer_entry_init(&current_call_data->answer_delay_timer, 
 							current_call_data->call_id, 
 							current_call_data, &answer_delay_callback);
-		pj_timer_entry_init(&current_call_data->call_timeout_timer,
-							current_call_data->call_id,
-							current_call_data, &call_timeout_callback);
 		delay.sec = CALL_DELAY_TIME_SEC;
 		delay.msec = CALL_DELAY_TIME_MSEC;
 		current_call_data->answer_delay_timer.id = call_id;
@@ -344,13 +341,15 @@ static void on_call_state(pjsua_call_id call_id, pjsip_event *e)
 					   call_info.last_status_text.ptr));
 
 			/* Release timers after ending call */
-			if (current_call_data->answer_delay_timer.id != PJSUA_INVALID_ID)
+			if ((current_call_data->answer_delay_timer.id != PJSUA_INVALID_ID)
+			 && (call_info.last_status!=PJSIP_SC_NOT_FOUND))
 			{
 				pjsip_endpoint *endpt = pjsua_get_pjsip_endpt();
 				pjsip_endpt_cancel_timer(endpt, &current_call_data->answer_delay_timer);
 				current_call_data->answer_delay_timer.id = PJSUA_INVALID_ID;
 			}
-			if (current_call_data->call_timeout_timer.id != PJSUA_INVALID_ID)
+			if ((current_call_data->call_timeout_timer.id != PJSUA_INVALID_ID)
+			 && (call_info.last_status!=PJSIP_SC_NOT_FOUND))
 			{
 				pjsip_endpoint *endpt = pjsua_get_pjsip_endpt();
 				pjsip_endpt_cancel_timer(endpt, &current_call_data->call_timeout_timer);
@@ -411,7 +410,9 @@ static void on_call_media_state(pjsua_call_id call_id)
 		/* Set call duration timer */
 		pjsip_endpoint *endpt = pjsua_get_pjsip_endpt();
 		pj_time_val delay;
-
+		pj_timer_entry_init(&current_call_data->call_timeout_timer,
+							current_call_data->call_id,
+							current_call_data, &call_timeout_callback);
 		delay.sec = CALL_DURATION_TIME_SEC;
 		delay.msec = CALL_DURATION_TIME_MSEC;
 		current_call_data->call_timeout_timer.id = call_id;
