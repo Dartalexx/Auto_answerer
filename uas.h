@@ -1,6 +1,5 @@
 #include <pjlib.h>
 #include <pjlib-util.h>
-#include <pjnath.h>
 #include <pjsip.h>
 #include <pjsip_ua.h>
 #include <pjsip_simple.h>
@@ -17,9 +16,9 @@
 
 #define THIS_FILE "Server"
 
-#define DIAL_TONE_SERVER "111"
-#define WAV_SERVER "222"
-#define RINGBACK_TONE_SERVER "333"
+#define DIAL_TONE_SOURCE_NUMBER "111"
+#define WAV_SOURCE_NUMBER "222"
+#define RINGBACK_TONE_SOURCE_NUMBER "333"
 
 #define UDP_PORT 5060
 #define LOG_LEVEL 3
