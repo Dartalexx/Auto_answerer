@@ -30,6 +30,9 @@
 #define CALL_DURATION_TIME_SEC 10
 #define CALL_DURATION_TIME_MSEC 0
 
+#define POOL_SIZE 8000
+#define POOL_SIZE_INC 1500
+
 /* Contains info of choosen ringtone for current call */
 typedef enum ring_mode
 {

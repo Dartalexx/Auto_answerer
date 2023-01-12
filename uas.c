@@ -117,13 +117,13 @@ ring_mode ring_mode_get(pjsip_rx_data *rdata)
 	pj_str_t ringback_source_number = pj_str(RINGBACK_TONE_SOURCE_NUMBER);
 	pj_str_t wav_source_number = pj_str(WAV_SOURCE_NUMBER);
 
-	pjsip_sip_uri *to_uri = (pjsip_sip_uri *)rdata->msg_info.to->uri;
+	pjsip_sip_uri *to_uri = (pjsip_sip_uri *)pjsip_uri_get_uri(rdata->msg_info.to->uri);
 
-	if (pj_strcmp(&dial_source_number, &to_uri->host) == 0)
+	if (pj_strcmp(&dial_source_number, &to_uri->user) == 0)
 		return DIAL_MODE;
-	if (pj_strcmp(&wav_source_number, &to_uri->host) == 0)
+	if (pj_strcmp(&wav_source_number, &to_uri->user) == 0)
 		return WAV_MODE;
-	if (pj_strcmp(&ringback_source_number, &to_uri->host) == 0)
+	if (pj_strcmp(&ringback_source_number, &to_uri->user) == 0)
 		return RINGBACK_MODE;
 
 	return NOT_SET;
@@ -133,7 +133,7 @@ ring_mode ring_mode_get(pjsip_rx_data *rdata)
 pj_status_t file_player_create(pj_str_t filename)
 {
 	pj_status_t status;
-	status = pjsua_player_create(&filename, 0, &app_data.player_id);
+	status = pjsua_player_create(&filename, NO_OPTIONS, &app_data.player_id);
 	return status;
 }
 
@@ -146,7 +146,7 @@ pj_status_t tone_generate(ringtone *ringtone)
 
 	status = pjmedia_tonegen_create(app_data.pool,
 									ringtone->clock_rate, ringtone->channel_count,
-									ringtone->samples_per_frame, ringtone->bits_per_sample, 0,
+									ringtone->samples_per_frame, ringtone->bits_per_sample, NO_OPTIONS,
 									&ringtone->port);
 	if (status != PJ_SUCCESS)
 		return status;
@@ -154,9 +154,9 @@ pj_status_t tone_generate(ringtone *ringtone)
 	pj_bzero(&tone, sizeof(tone));
 	for (int i = 0; i < ringtone->tones_count; i++)
 	{
-		tone[0].freq1 = ringtone->tone_freq;
-		tone[0].on_msec = ringtone->on_duration;
-		tone[0].off_msec = ringtone->off_duration;
+		tone[i].freq1 = ringtone->tone_freq;
+		tone[i].on_msec = ringtone->on_duration;
+		tone[i].off_msec = ringtone->off_duration;
 	}
 	status = pjmedia_tonegen_play(ringtone->port, ringtone->tones_count, tone, PJMEDIA_TONEGEN_LOOP);
 	if (status != PJ_SUCCESS)
@@ -460,7 +460,7 @@ pj_status_t app_init()
 	if (status != PJ_SUCCESS)
 		return status;
 
-	app_data.pool = pjsua_pool_create("main_pool", 8000, 1500);
+	app_data.pool = pjsua_pool_create("main_pool", POOL_SIZE, POOL_SIZE_INC);
 	if (!app_data.pool)
 		return status;
 

@@ -8,6 +8,7 @@
 #define TONE_FREQUENCY 425
 #define DIAL_TONE_ON_DURATION 4000
 #define DIAL_TONE_OFF_DURATION 0
+#define NO_OPTIONS 0
 #define WAV_RINGTONE "sound/answer.wav"
 
 typedef struct ringtone
