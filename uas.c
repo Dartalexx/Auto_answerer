@@ -46,7 +46,6 @@ static void call_timeout_callback(pj_timer_heap_t *timer_heap, pj_timer_entry *e
 	call_data *current_call_data = call_data_get_by_id(call_id);
 	pj_str_t disconnect_reason;
 	PJ_UNUSED_ARG(timer_heap);
-
 	if (call_id == PJSUA_INVALID_ID)
 	{
 		PJ_LOG(1, (THIS_FILE, "Invalid call ID in timer callback"));
@@ -56,7 +55,7 @@ static void call_timeout_callback(pj_timer_heap_t *timer_heap, pj_timer_entry *e
 	disconnect_reason = pj_str("Call duration has been exceeded");
 
 	status = pjsua_call_hangup(call_id, PJSIP_SC_OK, &disconnect_reason, NULL);
-	if (status == PJSUA_INVALID_ID)
+	if (status != PJ_SUCCESS)
 		PJ_LOG(3, (THIS_FILE, "Failed to disconnect the call %d",
 				   call_id));
 	PJ_LOG(3, (THIS_FILE, "Duration (%d seconds) has been exceeded "
