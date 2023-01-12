@@ -21,7 +21,7 @@
 #define RINGBACK_TONE_SOURCE_NUMBER "333"
 
 #define UDP_PORT 5060
-#define LOG_LEVEL 3
+#define LOG_LEVEL 4
 
 #define MAX_CALLS 20
 

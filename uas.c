@@ -226,6 +226,10 @@ static void on_incoming_call(pjsua_acc_id acc_id, pjsua_call_id call_id,
 	pj_str_t disconnect_reason;
 	pjsua_call_answer(call_id, PJSIP_SC_TRYING, NULL, NULL);
 
+	// /* REMOVE */
+	// disconnect_reason = pj_str("Just checking");
+	// pjsua_call_hangup(call_id, PJSIP_SC_OK, &disconnect_reason, NULL);
+
 	/* Searching in calls_data for empty slots */
 	call_data *current_call_data = call_data_get_free();
 	if ((!current_call_data))
