@@ -70,7 +70,7 @@ PJ_BEGIN_DECL
  * SDP session descriptor.
  */
 #ifndef PJMEDIA_MAX_SDP_MEDIA
-#   define PJMEDIA_MAX_SDP_MEDIA	16
+#   define PJMEDIA_MAX_SDP_MEDIA	21
 #endif
 
 
